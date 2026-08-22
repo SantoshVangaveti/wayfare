@@ -86,6 +86,23 @@ check("clean day has no errors", g.warnings.filter((w) => w.level === "error").l
   JSON.stringify(g.warnings));
 check("clean day scores 100", g.score === 100, `score ${g.score}`);
 
+console.log("\ntransit blocks are the journey, not a place");
+const arrivalDay: BlockLike[] = [
+  { id: "t1", type: "FLIGHT", title: "Flight to Kozhikode", date: "2026-09-07",
+    startTime: "06:40", durationMin: 80, lat: 13.1986, lng: 77.7066 },
+  { id: "t2", type: "TRANSIT", title: "Drive to Vythiri", date: "2026-09-07",
+    startTime: "09:00", durationMin: 120, lat: 11.55, lng: 76.04 },
+  { id: "t3", type: "LODGING", title: "Check in", date: "2026-09-07",
+    startTime: "12:00", lat: 11.55, lng: 76.04 },
+];
+const t = analyseDay(arrivalDay, { tripStyle: "balanced" });
+check("no false impossible-travel around transit",
+  !t.warnings.some((w) => w.code === "TRAVEL_IMPOSSIBLE"),
+  JSON.stringify(t.warnings));
+check("transit duration counts as travel", t.travelMin >= 200 && t.travelMin <= 220,
+  `${t.travelMin}`);
+check("transit duration is not activity", t.activeMin === 0, `${t.activeMin}`);
+
 console.log("\noverlap");
 const overlap = analyseDay([
   { id: "o1", type: "ACTIVITY", title: "A", date: "2026-09-11", startTime: "10:00", durationMin: 120 },

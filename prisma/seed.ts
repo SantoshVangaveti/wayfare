@@ -155,8 +155,8 @@ async function main() {
       openHours: H.food, sortOrder: 3 },
 
     // ---- Day 6, Sat 12 Sep — home
-    { tripId: trip.id, date: D("2026-09-12"), startTime: "11:00", type: "LODGING",
-      title: "Check out", lat: 11.5500, lng: 76.0400, sortOrder: 1 },
+    { tripId: trip.id, date: D("2026-09-12"), startTime: "11:00", endTime: "11:30", type: "LODGING",
+      title: "Check out", lat: 11.5500, lng: 76.0400, durationMin: 30, sortOrder: 1 },
     { tripId: trip.id, date: D("2026-09-12"), startTime: "11:30", endTime: "13:30", type: "TRANSIT",
       title: "Drive to Kozhikode", lat: 11.1367, lng: 75.9553, durationMin: 120,
       cost: 3200, currency: "INR", sortOrder: 2 },

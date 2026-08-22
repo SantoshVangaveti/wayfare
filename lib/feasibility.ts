@@ -115,6 +115,12 @@ export interface AnalyseCtx {
 const hasLat = (b: BlockLike): b is BlockLike & { lat: number; lng: number } =>
   typeof b.lat === "number" && typeof b.lng === "number";
 
+/** Blocks that ARE a journey. Their duration is travel, not activity, and the
+ *  gap check into them is skipped — the block itself covers the distance. */
+const TRANSIT_TYPES = new Set<BlockLike["type"]>([
+  "FLIGHT", "TRAIN", "BUS", "FERRY", "TRANSIT",
+]);
+
 const endOf = (b: BlockLike): string =>
   b.endTime ?? toHHMM(toMin(b.startTime!) + (b.durationMin ?? 60));
 
@@ -136,7 +142,8 @@ export function analyseDay(blocks: BlockLike[], ctx: AnalyseCtx): DayAnalysis {
   for (let i = 0; i < timed.length; i++) {
     const b = timed[i];
     const dur = b.durationMin ?? 60;
-    if (b.type !== "LODGING") activeMin += dur;
+    if (TRANSIT_TYPES.has(b.type)) travelMin += dur;
+    else if (b.type !== "LODGING") activeMin += dur;
 
     // 1. is it actually open
     if (b.openHours && !isOpenAt(b.openHours, b.date, b.startTime!)) {
@@ -190,7 +197,8 @@ export function analyseDay(blocks: BlockLike[], ctx: AnalyseCtx): DayAnalysis {
     }
 
     // 6. does the journey actually fit in the gap
-    if (hasLat(b) && hasLat(next)) {
+    //    (skipped when the next block IS the journey — a flight or a drive)
+    if (hasLat(b) && hasLat(next) && !TRANSIT_TYPES.has(next.type)) {
       const leg = travelTime(b, next);
       travelMin += leg.min;
       const gap = nextStart - bEnd;
