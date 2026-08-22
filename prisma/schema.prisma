@@ -1,0 +1,224 @@
+// FROZEN CONTRACT. Never add or rename a field without deciding it deliberately.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // pooled  — runtime
+  directUrl = env("DIRECT_URL")     // direct  — migrations only
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  avatar    String?
+  homeCity  String?
+  homeLat   Float?
+  homeLng   Float?
+  homeCountry String? @default("IN")
+  profile   Json?                       // TravelProfile — see lib/types.ts
+  members   TripMember[]
+  expenses  Expense[]  @relation("payer")
+  photos    Photo[]
+  comments  Comment[]
+  createdAt DateTime @default(now())
+}
+
+model Trip {
+  id           String     @id @default(cuid())
+  title        String
+  destination  String
+  destLat      Float
+  destLng      Float
+  destCountry  String?
+  scope        String     @default("domestic")   // domestic | international
+  homeCountry  String?
+  currency     String     @default("INR")        // destination currency
+  homeCurrency String     @default("INR")
+  startDate    DateTime
+  endDate      DateTime
+  coverImage   String?
+  status       TripStatus @default(PLANNING)
+  origin       String     @default("planned")    // planned | imported
+  party        Json?                             // Party — see lib/types.ts
+  inboundAddress String?  @unique                // trip-a7x2@in.wayfare.app
+  shareId      String?    @unique                // long random, unlisted
+  shareLevel   String     @default("itinerary")  // itinerary | everything
+  packingJson  Json?
+  members      TripMember[]
+  blocks       Block[]
+  candidates   Candidate[]
+  expenses     Expense[]
+  photos       Photo[]
+  ingests      Ingest[]
+  createdAt    DateTime   @default(now())
+}
+enum TripStatus {
+  PLANNING
+  BOOKED
+  ACTIVE
+  COMPLETED
+}
+
+model TripMember {
+  id     String @id @default(cuid())
+  tripId String
+  userId String
+  role   String @default("member")
+  trip   Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user   User @relation(fields: [userId], references: [id])
+  @@unique([tripId, userId])
+}
+
+/// THE core table. One wide row for anything that happens at a time in a place.
+model Block {
+  id          String      @id @default(cuid())
+  tripId      String
+  date        DateTime                       // day bucket, midnight, destination-local
+  startTime   String?                        // "09:30" — NEVER converted to UTC
+  endTime     String?
+  type        BlockType
+  title       String
+  subtitle    String?
+  placeName   String?
+  lat         Float?
+  lng         Float?
+  address     String?
+  durationMin Int?
+  cost        Float?
+  currency    String?
+  status      BlockStatus @default(PLANNED)
+  sourceUrl   String?
+  tags        String[]    @default([])
+  openHours   Json?                          // OpenHours
+  attendees   String[]    @default([])       // userIds; empty === everyone
+  meta        Json?                          // conf number, phone, PNR, wifi, gate…
+  sortOrder   Int         @default(0)
+  createdById String?
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  expenses    Expense[]
+  photos      Photo[]
+  comments    Comment[]
+  @@index([tripId, date])
+}
+enum BlockType {
+  FLIGHT
+  TRAIN
+  BUS
+  FERRY
+  LODGING
+  ACTIVITY
+  MEAL
+  TRANSIT
+  NOTE
+}
+
+enum BlockStatus {
+  PLANNED
+  CONFIRMED
+  DONE
+  SKIPPED
+}
+
+model Candidate {
+  id          String  @id @default(cuid())
+  tripId      String
+  name        String
+  category    String                          // activity | restaurant | shopping | landmark
+  description String?
+  lat         Float?
+  lng         Float?
+  durationMin Int      @default(90)
+  openHours   Json?
+  priceLevel  Int?
+  tags        String[] @default([])
+  image       String?
+  rating      Float?
+  votes       String[] @default([])           // userIds — feeds buildItinerary
+  scheduled   Boolean  @default(false)
+  trip        Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  blockId   String
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+  block     Block @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  user      User  @relation(fields: [userId], references: [id])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  tripId      String
+  blockId     String?
+  payerId     String
+  amount      Float
+  currency    String   @default("INR")
+  description String
+  splitType   String   @default("equal")
+  shares      Json                            // { userId: amountOwed }
+  createdAt   DateTime @default(now())
+  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  block Block? @relation(fields: [blockId], references: [id])
+  payer User   @relation("payer", fields: [payerId], references: [id])
+}
+
+model Photo {
+  id         String    @id @default(cuid())
+  tripId     String
+  blockId    String?
+  url        String
+  caption    String?
+  takenAt    DateTime?
+  uploaderId String?
+  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  block Block? @relation(fields: [blockId], references: [id])
+  user  User?  @relation(fields: [uploaderId], references: [id])
+}
+
+/// Raw inbound material. Extraction is LAZY — runs when the Inbox screen loads.
+model Ingest {
+  id         String   @id @default(cuid())
+  tripId     String?
+  sourceType String                            // email | screenshot | text | pdf | link
+  rawText    String?
+  rawImage   String?
+  parsed     Json?
+  confidence Float?
+  status     String   @default("pending")      // pending | applied | rejected
+  createdAt  DateTime @default(now())
+  trip Trip? @relation(fields: [tripId], references: [id])
+}
+
+/// Single row. The AI key lives here, not in env — so a public deploy is safe.
+model AppSettings {
+  id         String   @id @default("singleton")
+  provider   String   @default("google")
+  model      String   @default("gemini-3-flash")
+  apiKeyEnc  String?                           // AES-256-GCM
+  apiKeyHint String?                           // "AIzaSy…k9f2a"
+  updatedAt  DateTime @updatedAt
+}
+
+model AiCache {
+  key       String   @id                       // sha256(provider|model|system|prompt)
+  value     Json
+  createdAt DateTime @default(now())
+}
+
+/// Per-call usage, so the settings meter shows real numbers.
+model AiUsage {
+  id         String   @id @default(cuid())
+  feature    String                            // suggestPlaces | extractBlocks | …
+  provider   String
+  model      String
+  inTokens   Int      @default(0)
+  outTokens  Int      @default(0)
+  costUsd    Float    @default(0)
+  cached     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  @@index([createdAt])
+}
