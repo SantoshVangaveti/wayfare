@@ -7,8 +7,7 @@ import { format, parseISO } from "date-fns";
 import { prisma } from "@/lib/db";
 import { analyseTrip, fmtDur } from "@/lib/feasibility";
 import { toBlockLike } from "@/lib/blocks";
-import { balances, settle } from "@/lib/settle";
-import type { ExpenseLike, Party } from "@/lib/types";
+import type { Party } from "@/lib/types";
 import { PrintTrigger } from "./PrintTrigger";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +61,6 @@ export default async function PrintPage({
     include: {
       blocks: { orderBy: [{ date: "asc" }, { sortOrder: "asc" }] },
       members: { include: { user: true } },
-      expenses: { include: { payer: true } },
     },
   });
   if (!trip) notFound();
@@ -83,16 +81,7 @@ export default async function PrintPage({
     dates.push(new Date(t).toISOString().slice(0, 10));
   }
 
-  const userIds = trip.members.map((m) => m.userId);
-  const expenseLikes: ExpenseLike[] = trip.expenses.map((e) => ({
-    payerId: e.payerId, amount: e.amount, shares: e.shares as Record<string, number>,
-  }));
-  const nets = balances(expenseLikes, userIds);
-  const transfers = settle(expenseLikes, userIds);
-  const nameOf = (uid: string) =>
-    trip.members.find((m) => m.userId === uid)?.user.name ?? uid;
-  const totalSpent = trip.expenses.reduce((s, e) => s + e.amount, 0);
-  const totalKm = analyses.size;
+  const plannedCost = trip.blocks.reduce((s, b) => s + (b.cost ?? 0), 0);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-8 text-ink [print-color-adjust:exact] [-webkit-print-color-adjust:exact] print:px-0 print:py-0">
@@ -238,62 +227,17 @@ export default async function PrintPage({
         );
       })}
 
-      {/* money */}
-      {trip.expenses.length > 0 && (
-        <section className="mt-6 break-inside-avoid overflow-hidden rounded-2xl border-2 border-ok">
-          <div className="bg-ok-soft px-4 py-2">
-            <span className="font-poppins text-base font-bold tracking-tight text-ok">
-              💰 {trip.expenses.length} expenses → settle up in {transfers.length}{" "}
-              {transfers.length === 1 ? "payment" : "payments"}
-            </span>
-            <span className="ml-2 font-mono text-xs text-ok">
-              ({money.format(totalSpent)} all in)
-            </span>
-          </div>
-          <div className="grid gap-5 bg-surface px-4 py-3 text-sm sm:grid-cols-2">
-            <div>
-              <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-ink-3">
-                🧾 Where everyone stands
-              </div>
-              {userIds.map((uid) => {
-                const net = nets.get(uid) ?? 0;
-                return (
-                  <div key={uid} className="flex justify-between font-mono text-xs">
-                    <span>{nameOf(uid)}</span>
-                    <span>
-                      {net > 0.005
-                        ? `😄 is owed ${money.format(net)}`
-                        : net < -0.005
-                          ? `😅 owes ${money.format(-net)}`
-                          : "✅ settled"}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            <div>
-              <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-ink-3">
-                🤝 Just these payments
-              </div>
-              {transfers.map((t, i) => (
-                <div key={i} className="flex justify-between font-mono text-xs">
-                  <span>
-                    {nameOf(t.fromUserId)} → {nameOf(t.toUserId)}
-                  </span>
-                  <strong>{money.format(t.amount)}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* Money is deliberately absent: this sheet is printed before the trip,
+          and splitting costs is an ongoing thing that lives in the app. */}
 
       <footer className="mt-6 rounded-2xl bg-paper-2 px-4 py-3 text-center">
         <div className="font-poppins text-sm font-bold tracking-tight text-ink">
           ✨ Have the best time ✨
         </div>
         <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-3">
-          {totalKm} days planned with Wayfare · keep this handy 📄
+          {dates.length} days planned with Wayfare
+          {plannedCost > 0 && ` · ${money.format(plannedCost)} booked so far`} · keep
+          this handy 📄
         </div>
       </footer>
     </div>
