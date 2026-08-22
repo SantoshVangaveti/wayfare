@@ -17,7 +17,9 @@ export interface UsageSummary {
   byFeature: { feature: string; calls: number; cached: number }[];
 }
 
-const DAILY_CAPS: Partial<Record<ProviderId, number>> = { google: 1500 };
+// Free-tier daily request cap per provider (gemini-3.6-flash: 20/day, learned
+// the hard way from a live 429)
+const DAILY_CAPS: Partial<Record<ProviderId, number>> = { google: 20 };
 
 export function SettingsView({
   provider: initialProvider,

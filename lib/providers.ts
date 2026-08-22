@@ -7,7 +7,7 @@ export const PROVIDERS: Record<ProviderId, {
   google: {
     label: "Google Gemini", keyUrl: "https://aistudio.google.com/apikey", keyPrefix: "AIza",
     models: [
-      { id: "gemini-3.6-flash",    label: "Gemini 3.6 Flash — free tier",   free: true, vision: true },
+      { id: "gemini-3.6-flash",    label: "Gemini 3.6 Flash — free, 20/day", free: true, vision: true },
       { id: "gemini-flash-latest", label: "Gemini Flash (latest alias)",    free: true, vision: true },
     ],
   },

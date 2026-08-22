@@ -29,6 +29,7 @@ export function InboxView({
   const [ingests, setIngests] = useState(initial);
   const [states, setStates] = useState<Record<string, CardState>>({});
   const [copied, setCopied] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -143,7 +144,22 @@ export function InboxView({
 
         <button
           onClick={() => fileRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line-2 p-4 text-ink-3 transition hover:border-sea hover:text-sea"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            onFile(e.dataTransfer.files?.[0]);
+          }}
+          className={cn(
+            "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-4 transition",
+            dragging
+              ? "border-sea bg-sea-soft text-sea"
+              : "border-line-2 text-ink-3 hover:border-sea hover:text-sea",
+          )}
         >
           <ImagePlus className="size-6" />
           <span className="font-poppins text-sm font-semibold">Drop a screenshot</span>
