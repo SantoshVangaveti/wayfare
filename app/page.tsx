@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Settings } from "lucide-react";
 import { prisma } from "@/lib/db";
+import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { Companion } from "@/components/Companion";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,8 @@ export default async function Landing() {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-6">
-      <header className="flex items-center justify-between">
+      <AmbientBackdrop photo="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1600&q=75" />
+      <header className="relative z-10 flex items-center justify-between">
         <span className="font-poppins text-xl font-bold tracking-tight text-sea">
           Wayfare
         </span>
@@ -44,7 +46,7 @@ export default async function Landing() {
         </Link>
       </header>
 
-      <main className="flex flex-1 flex-col justify-center gap-6 py-10">
+      <main className="relative z-10 flex flex-1 flex-col justify-center gap-6 py-10">
         <div className="text-center">
           <h1 className="font-poppins text-3xl font-bold tracking-tight text-ink sm:text-4xl">
             Journey with joy,

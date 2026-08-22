@@ -8,6 +8,8 @@ import {
 import { detectLocation, searchPlaces, type Place } from "@/lib/location";
 import type { Traveller } from "@/lib/types";
 import { defaultFunnel, loadFunnel, saveFunnel, type FunnelState } from "@/lib/funnel";
+import { themeForInterests } from "@/lib/imagery";
+import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { cn } from "@/lib/utils";
 
 const TRANSPORT = [
@@ -101,7 +103,9 @@ export default function DetailsPage() {
   }
 
   return (
-    <div className="space-y-7">
+    <>
+      <AmbientBackdrop photo={themeForInterests(s.interests)} />
+      <div className="relative z-10 space-y-7">
       <h1 className="font-poppins text-2xl font-bold tracking-tight">The details</h1>
 
       <Section title="How far from home?">
@@ -378,6 +382,7 @@ export default function DetailsPage() {
       >
         Find places
       </button>
-    </div>
+      </div>
+    </>
   );
 }

@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, MapPin } from "lucide-react";
 import { loadFunnel, type FunnelState } from "@/lib/funnel";
+import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { Chip } from "@/components/Chip";
 import { Companion } from "@/components/Companion";
+import { themeForInterests } from "@/lib/imagery";
 import { cn } from "@/lib/utils";
 import {
   createTripFromDestination, suggestDestinationsAction, type DestinationResult,
@@ -67,7 +69,9 @@ export default function DestinationsPage() {
   const [top, ...rest] = results;
 
   return (
-    <div className="space-y-5">
+    <>
+      <AmbientBackdrop photo={themeForInterests(profile?.interests ?? [])} />
+      <div className="relative z-10 space-y-5">
       <h1 className="font-poppins text-2xl font-bold tracking-tight">
         Five places that fit
       </h1>
@@ -197,6 +201,7 @@ export default function DestinationsPage() {
           </div>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
