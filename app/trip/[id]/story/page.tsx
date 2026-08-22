@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { prisma } from "@/lib/db";
+import { effectiveStatus } from "@/lib/status";
 import { haversineKm } from "@/lib/feasibility";
 import { weatherFor } from "@/lib/weather";
 import type { StoryDay, StoryStats } from "@/components/TripStory";
@@ -82,7 +83,7 @@ export default async function StoryPage({
       tripId={trip.id}
       title={trip.title}
       destination={trip.destination}
-      mode={trip.status === "COMPLETED" || trip.photos.length > 0 ? "memories" : "plan"}
+      mode={effectiveStatus(trip) === "COMPLETED" || trip.photos.length > 0 ? "memories" : "plan"}
       days={days}
       stats={stats}
       shareId={trip.shareId}

@@ -4,10 +4,12 @@ import { notFound, redirect } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { BedDouble, Luggage } from "lucide-react";
 import { prisma } from "@/lib/db";
+import { effectiveStatus } from "@/lib/status";
 import { analyseTrip, toMin } from "@/lib/feasibility";
 import { toBlockLike } from "@/lib/blocks";
 import type { Party, TravelProfile } from "@/lib/types";
 import { BlockCard } from "@/components/BlockCard";
+import { DeleteTrip } from "@/components/DeleteTrip";
 import { LoadBar } from "@/components/LoadBar";
 import { Chip } from "@/components/Chip";
 import { cn } from "@/lib/utils";
@@ -29,7 +31,7 @@ export default async function OverviewPage({
     },
   });
   if (!trip) notFound();
-  if (trip.status === "ACTIVE") redirect(`/trip/${id}/today`);
+  if (effectiveStatus(trip) === "ACTIVE") redirect(`/trip/${id}/today`);
 
   const party = trip.party as unknown as Party;
   const likes = trip.blocks.map(toBlockLike);
@@ -221,6 +223,8 @@ export default async function OverviewPage({
           </div>
         </Link>
       </div>
+
+      <DeleteTrip tripId={trip.id} title={trip.title} />
     </div>
   );
 }
