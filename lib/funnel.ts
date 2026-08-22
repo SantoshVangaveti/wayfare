@@ -11,6 +11,8 @@ export interface FunnelState {
   home: Place | null;
   startDate: string;            // "YYYY-MM-DD"
   endDate: string;
+  /** false === one place. true === an ordered route across 2-4 stops. */
+  multiCity: boolean;
   transport: string[];
   budgetPerDay: number | null;  // null === "go wild"
   diet: string[];
@@ -22,7 +24,10 @@ const KEY = "wayfare.funnel";
 
 export function loadFunnel(): FunnelState | null {
   try {
-    return JSON.parse(sessionStorage.getItem(KEY) ?? "null");
+    const raw = JSON.parse(sessionStorage.getItem(KEY) ?? "null");
+    if (!raw) return null;
+    // A funnel saved before multi-city existed has no flag — one place.
+    return { ...raw, multiCity: raw.multiCity === true };
   } catch {
     return null;
   }
@@ -44,6 +49,7 @@ export function defaultFunnel(): FunnelState {
     home: null,
     startDate: d(21),
     endDate: d(26),
+    multiCity: false,
     transport: [],
     budgetPerDay: 6000,
     diet: [],

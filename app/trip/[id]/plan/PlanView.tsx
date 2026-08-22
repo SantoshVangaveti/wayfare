@@ -15,6 +15,7 @@ import {
   analyseTrip, fmtDur, toHHMM, toMin, travelTime,
 } from "@/lib/feasibility";
 import { mapsUrl } from "@/lib/maps";
+import { shortPlace } from "@/lib/legs";
 import type { BlockLike, Party, Warning } from "@/lib/types";
 import { BlockCard } from "@/components/BlockCard";
 import { LoadBar } from "@/components/LoadBar";
@@ -30,11 +31,59 @@ export type PlanBlock = BlockLike & {
   sortOrder: number;
 };
 
+/** One stop of a multi-destination trip. Empty on every other trip. */
+export type PlanLeg = {
+  id: string;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  nights: number;
+};
+
 const GHOST_GAP_MIN = 150;
 
 // Same rule as the engine: these blocks ARE a journey, so there is no
 // "getting there" leg to draw into them.
 const TRANSIT_TYPES = new Set(["FLIGHT", "TRAIN", "BUS", "FERRY", "TRANSIT"]);
+
+/** One day tab. Identical in the flat strip and under a leg header. */
+function DayTab({
+  date,
+  index,
+  active,
+  errors,
+  warns,
+  onSelect,
+}: {
+  date: string;
+  index: number;
+  active: boolean;
+  errors: boolean;
+  warns: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        "flex shrink-0 flex-col items-center rounded-xl border px-3 py-1.5 transition-colors",
+        active
+          ? "border-sea bg-sea-soft text-sea"
+          : "border-line bg-surface text-ink-2 hover:border-line-2",
+      )}
+    >
+      <span className="font-poppins text-xs font-semibold">Day {index + 1}</span>
+      <span className="flex items-center gap-1 font-mono text-[11px]">
+        {format(parseISO(date), "EEE d")}
+        {errors ? (
+          <span className="size-1.5 rounded-full bg-mango" />
+        ) : warns ? (
+          <span className="size-1.5 rounded-full bg-sun" />
+        ) : null}
+      </span>
+    </button>
+  );
+}
 
 export function PlanView({
   tripId,
@@ -42,12 +91,14 @@ export function PlanView({
   destination,
   party,
   days: initialDays,
+  legs = [],
 }: {
   tripId: string;
   currency: string;
   destination: string;
   party: Party;
   days: { date: string; blocks: PlanBlock[] }[];
+  legs?: PlanLeg[];
 }) {
   const router = useRouter();
   const [days, setDays] = useState(initialDays);
@@ -186,37 +237,59 @@ export function PlanView({
 
   return (
     <div className="space-y-4">
-      {/* day tabs */}
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {days.map((d, i) => {
-          const a = analyses.get(d.date);
-          const dayErrors = a?.warnings.some((w) => w.level === "error");
-          const dayWarns = a?.warnings.some((w) => w.level === "warn");
-          const active = d.date === selected;
-          return (
-            <button
+      {/* day tabs — grouped under their stop when the trip is a route.
+          Only if the stops actually cover every day; otherwise a day would
+          have nowhere to appear, and losing a tab is worse than losing a
+          header. */}
+      {legs.length > 0 &&
+      days.every((d) =>
+        legs.some((l) => d.date >= l.startDate && d.date <= l.endDate),
+      ) ? (
+        <div className="flex gap-5 overflow-x-auto pb-1">
+          {legs.map((leg) => (
+            <div key={leg.id} className="shrink-0">
+              <div className="mb-1.5 flex items-baseline gap-1.5">
+                <span className="font-poppins text-xs font-bold tracking-tight text-ink">
+                  {shortPlace(leg.destination)}
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-wide tabular-nums text-ink-3">
+                  {leg.nights}n
+                </span>
+              </div>
+              <div className="flex gap-1.5">
+                {days
+                  .map((d, i) => ({ d, i }))
+                  .filter(({ d }) => d.date >= leg.startDate && d.date <= leg.endDate)
+                  .map(({ d, i }) => (
+                  <DayTab
+                    key={d.date}
+                    date={d.date}
+                    index={i}
+                    active={d.date === selected}
+                    errors={!!analyses.get(d.date)?.warnings.some((w) => w.level === "error")}
+                    warns={!!analyses.get(d.date)?.warnings.some((w) => w.level === "warn")}
+                    onSelect={() => { setSelected(d.date); setFixNote(null); }}
+                  />
+                  ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {days.map((d, i) => (
+            <DayTab
               key={d.date}
-              onClick={() => { setSelected(d.date); setFixNote(null); }}
-              className={cn(
-                "flex shrink-0 flex-col items-center rounded-xl border px-3 py-1.5 transition-colors",
-                active
-                  ? "border-sea bg-sea-soft text-sea"
-                  : "border-line bg-surface text-ink-2 hover:border-line-2",
-              )}
-            >
-              <span className="font-poppins text-xs font-semibold">Day {i + 1}</span>
-              <span className="flex items-center gap-1 font-mono text-[11px]">
-                {format(parseISO(d.date), "EEE d")}
-                {dayErrors ? (
-                  <span className="size-1.5 rounded-full bg-mango" />
-                ) : dayWarns ? (
-                  <span className="size-1.5 rounded-full bg-sun" />
-                ) : null}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+              date={d.date}
+              index={i}
+              active={d.date === selected}
+              errors={!!analyses.get(d.date)?.warnings.some((w) => w.level === "error")}
+              warns={!!analyses.get(d.date)?.warnings.some((w) => w.level === "warn")}
+              onSelect={() => { setSelected(d.date); setFixNote(null); }}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
         {/* timeline */}

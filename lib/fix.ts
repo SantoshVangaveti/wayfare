@@ -47,3 +47,56 @@ export function repackDay(blocks: BlockLike[]): BlockLike[] {
 
   return blocks.map((b) => out.get(b.id) ?? b);
 }
+
+/** Blocks that ARE a journey — same set analyseDay() uses. */
+const TRANSIT_TYPES = new Set<BlockLike["type"]>([
+  "FLIGHT", "TRAIN", "BUS", "FERRY", "TRANSIT",
+]);
+
+/**
+ * repackDay for a day that contains a journey. A FLIGHT/TRANSIT block already
+ * covers the distance into itself, so adding a drive on top of it would double
+ * count — exactly the gap check analyseDay() skips. Used on the leg-transition
+ * days of a multi-destination trip; single-destination repairs use repackDay.
+ */
+export function repackWithTransit(blocks: BlockLike[]): BlockLike[] {
+  const timed = blocks
+    .filter((b) => b.startTime)
+    .sort((a, b) => toMin(a.startTime!) - toMin(b.startTime!));
+  if (timed.length === 0) return blocks;
+
+  const out = new Map<string, BlockLike>();
+  let prev: BlockLike | null = null;
+  let cursor = toMin(timed[0].startTime!);
+
+  for (const b of timed) {
+    let start = cursor;
+    if (prev) {
+      if (TRANSIT_TYPES.has(b.type)) {
+        start += BUFFER_MIN;                      // the block IS the journey
+      } else if (
+        typeof prev.lat === "number" && typeof prev.lng === "number" &&
+        typeof b.lat === "number" && typeof b.lng === "number"
+      ) {
+        start += travelTime(
+          { lat: prev.lat, lng: prev.lng },
+          { lat: b.lat, lng: b.lng },
+        ).min + BUFFER_MIN;
+      }
+    }
+    start = Math.ceil(start / 5) * 5;
+    while (
+      b.openHours &&
+      !isOpenAt(b.openHours, b.date, toHHMM(start)) &&
+      start < 22 * 60
+    ) {
+      start += 15;
+    }
+    const dur = b.durationMin ?? 60;
+    out.set(b.id, { ...b, startTime: toHHMM(start), endTime: toHHMM(start + dur) });
+    cursor = start + dur;
+    prev = b;
+  }
+
+  return blocks.map((b) => out.get(b.id) ?? b);
+}

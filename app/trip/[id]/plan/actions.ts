@@ -4,11 +4,14 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
-import { analyseDay, analyseTrip, toHHMM, toMin } from "@/lib/feasibility";
+import {
+  analyseDay, analyseTrip, haversineKm, toHHMM, toMin,
+} from "@/lib/feasibility";
 import { toBlockLike } from "@/lib/blocks";
-import { repackDay } from "@/lib/fix";
+import { repackDay, repackWithTransit } from "@/lib/fix";
+import { legIndexForDate, shortPlace } from "@/lib/legs";
 import { tripBudget } from "@/lib/budget";
-import { suggestPlacesAction } from "../explore/actions";
+import { suggestPlacesAction, suggestPlacesForLegAction } from "../explore/actions";
 import type { BlockLike, Party } from "@/lib/types";
 
 const ItinBlockSchema = z.object({
@@ -44,6 +47,140 @@ places. Rules:
   the candidates where sensible). Do not fill every hour; slack is a feature.
 - Reuse the exact candidate lat/lng when scheduling one, and set candidateName.`;
 
+// Appended only when the trip has legs. The single-destination prompt is
+// byte-for-byte what it always was.
+const ROUTE_RULES = `
+- This trip is a ROUTE through several stops, listed in "route" with the exact
+  dates each stop owns. A candidate carries the "stop" it belongs to. Only ever
+  schedule a place on the days of its own stop — never in another stop's dates.
+- The first date of a stop is a moving day. The drive between stops is added
+  for you afterwards, so on that date plan at most one thing near the stop you
+  are leaving, in the morning, and keep the rest of the day for arriving.`;
+
+/** Blocks that ARE a journey — same set the engine uses. */
+const TRANSIT_TYPES = new Set<BlockLike["type"]>([
+  "FLIGHT", "TRAIN", "BUS", "FERRY", "TRANSIT",
+]);
+
+/** A stop, flattened to what the itinerary maths actually needs. */
+type RouteLeg = {
+  id: string;
+  destination: string;
+  lat: number;
+  lng: number;
+  startDate: string;
+  endDate: string;
+};
+
+/** Long enough that a road transfer is no longer the honest answer. */
+const MAX_TRANSIT_MIN = 14 * 60;
+/** Nothing new starts after this on a moving day — you arrived, that's enough. */
+const LAST_START_MIN = 21 * 60 + 30;
+const TRANSFER_BUFFER = 20;
+
+const hasCoords = (b: { lat?: number | null; lng?: number | null }) =>
+  typeof b.lat === "number" && typeof b.lng === "number";
+const startMin = (b: BlockLike) => toMin(b.startTime ?? "00:00");
+const endMin = (b: BlockLike) =>
+  b.endTime ? toMin(b.endTime) : startMin(b) + (b.durationMin ?? 60);
+
+/** repackWithTransit wraps past midnight (toHHMM is mod 1440). A block that
+ *  comes out earlier than the one before it fell off the end of the day. */
+function dropWhatFellOffTheDay(day: BlockLike[]): BlockLike[] {
+  const out: BlockLike[] = [];
+  let last = -1;
+  for (const b of day) {
+    const s = startMin(b);
+    if (s < last) break;
+    out.push(b);
+    last = s;
+  }
+  return out;
+}
+
+/**
+ * Put the inter-city journey on every leg-transition day. The block is a real
+ * TRANSIT with an honest duration (straight-line km × 2.6 min), so analyseDay()
+ * judges the moving day exactly as it judges any other — nothing here decides
+ * whether a day works.
+ */
+function withTransitBlocks(blocks: BlockLike[], legs: RouteLeg[]): BlockLike[] {
+  let out = blocks;
+
+  for (let i = 1; i < legs.length; i++) {
+    const from = legs[i - 1];
+    const to = legs[i];
+    const date = to.startDate;
+    const km = haversineKm(from, to);
+    const durationMin = Math.min(MAX_TRANSIT_MIN, Math.max(30, Math.round(km * 2.6)));
+
+    // The model, told the first day of a stop is a moving day, sometimes plans
+    // its OWN "Drive to X" on the DEPARTURE day (the last day of the previous
+    // stop) as well. Strip any AI-generated journey block on that departure day
+    // so our single computed drive on the arrival day is the only one that
+    // survives — the journey must appear exactly once.
+    out = out.filter(
+      (b) => !(b.date === from.endDate && TRANSIT_TYPES.has(b.type)),
+    );
+
+    // Our computed drive replaces whatever journey the model imagined here.
+    const rest = out.filter((b) => b.date !== date);
+    const onDay = out.filter((b) => b.date === date && !TRANSIT_TYPES.has(b.type));
+
+    const nearer = (b: BlockLike): "from" | "to" =>
+      hasCoords(b) &&
+      haversineKm({ lat: b.lat!, lng: b.lng! }, from) <
+        haversineKm({ lat: b.lat!, lng: b.lng! }, to)
+        ? "from"
+        : "to";
+    const byStart = (a: BlockLike, b: BlockLike) => startMin(a) - startMin(b);
+    // One thing before you drive, at most — a moving day is a moving day.
+    // Keeping it to one also means the repack below can never push the
+    // journey itself off the end of the day.
+    let leaving = onDay.filter((b) => nearer(b) === "from").sort(byStart).slice(0, 1);
+    const arriving = onDay.filter((b) => nearer(b) === "to").sort(byStart);
+
+    // Leave after the morning at the old stop, but early enough to arrive.
+    const latest = Math.max(5 * 60, LAST_START_MIN - durationMin);
+    const wanted = leaving.length
+      ? endMin(leaving[0]) + TRANSFER_BUFFER
+      : 8 * 60 + 30;
+    const start = Math.min(wanted, latest);
+    leaving = leaving.filter((b) => endMin(b) <= start);
+
+    const transit: BlockLike = {
+      id: `transit-${i}`,
+      type: "TRANSIT",
+      title: `${km > 300 ? "Travel" : "Drive"} to ${shortPlace(to.destination)}`,
+      date,
+      startTime: toHHMM(start),
+      endTime: toHHMM(start + durationMin),
+      durationMin,
+      lat: to.lat,
+      lng: to.lng,
+      tags: ["transfer"],
+      openHours: null,
+    };
+
+    // Provisional times for the new stop, trimmed the moment the day is full.
+    let cursor = start + durationMin + TRANSFER_BUFFER;
+    const kept: BlockLike[] = [];
+    for (const b of arriving) {
+      const dur = b.durationMin ?? 60;
+      if (cursor > LAST_START_MIN || cursor + dur > 24 * 60) break;
+      kept.push({ ...b, startTime: toHHMM(cursor), endTime: toHHMM(cursor + dur) });
+      cursor += dur + 45;
+    }
+
+    const day = dropWhatFellOffTheDay(
+      repackWithTransit([...leaving, transit, ...kept]),
+    );
+    out = [...rest, ...day];
+  }
+
+  return out;
+}
+
 /** The generate-and-check loop. The user never sees a plan that failed
  *  analyseDay() — errors are repaired (AI, then deterministic) or dropped. */
 export async function generateItinerary(
@@ -54,15 +191,32 @@ export async function generateItinerary(
     include: {
       candidates: true,
       blocks: true,
+      legs: { orderBy: { order: "asc" } },
     },
   });
   if (!trip) return { ok: false, reason: "failed" };
   const party = (trip.party as unknown as Party) ?? { travellers: [] };
 
+  const legs: RouteLeg[] = trip.legs.map((l) => ({
+    id: l.id,
+    destination: l.destination,
+    lat: l.lat,
+    lng: l.lng,
+    startDate: l.startDate.toISOString().slice(0, 10),
+    endDate: l.endDate.toISOString().slice(0, 10),
+  }));
+  const hasLegs = legs.length > 0;
+
   // Nothing to schedule means nothing to build. An imported trip arrives with
   // no candidates, so find real places first, then plan around the bookings.
+  // A route needs this per stop: Kochi's restaurants are no use in Munnar.
   let candidateRows = trip.candidates;
-  if (candidateRows.length === 0) {
+  if (hasLegs) {
+    for (const leg of trip.legs) {
+      await suggestPlacesForLegAction(tripId, leg.id).catch(() => {});
+    }
+    candidateRows = await prisma.candidate.findMany({ where: { tripId } });
+  } else if (candidateRows.length === 0) {
     await suggestPlacesAction(tripId).catch(() => {});
     candidateRows = await prisma.candidate.findMany({ where: { tripId } });
   }
@@ -79,16 +233,36 @@ export async function generateItinerary(
 
   const budget = await tripBudget(tripId);
 
+  // Which stop a place sits at. Undefined on a single-destination trip, so
+  // JSON.stringify drops the key and that prompt is unchanged.
+  const stopOf = (lat: number | null, lng: number | null) => {
+    if (!hasLegs || lat == null || lng == null) return undefined;
+    let best = legs[0];
+    for (const l of legs) {
+      if (haversineKm({ lat, lng }, l) < haversineKm({ lat, lng }, best)) best = l;
+    }
+    return shortPlace(best.destination);
+  };
+
   let proposed: z.infer<typeof ItinSchema>;
   try {
     proposed = await askAI({
       feature: "buildItinerary",
-      system: `${ITIN_SYSTEM}\n- ${budget.brief}`,
+      system: `${ITIN_SYSTEM}${hasLegs ? ROUTE_RULES : ""}\n- ${budget.brief}`,
       prompt: JSON.stringify({
         destination: trip.destination,
         destLat: trip.destLat,
         destLng: trip.destLng,
         dates,
+        route: hasLegs
+          ? legs.map((l) => ({
+              stop: shortPlace(l.destination),
+              destination: l.destination,
+              lat: l.lat,
+              lng: l.lng,
+              dates: { start: l.startDate, end: l.endDate },
+            }))
+          : undefined,
         party,
         budgetPerDay: budget.perDay,
         currency: budget.currency,
@@ -108,6 +282,7 @@ export async function generateItinerary(
           tags: c.tags,
           votes: c.votes.length,
           openHours: c.openHours,
+          stop: stopOf(c.lat, c.lng),
         })),
       }),
       schema: ItinSchema,
@@ -164,8 +339,14 @@ export async function generateItinerary(
       };
     });
 
+  // The route's own connective tissue. Added before the check, never after —
+  // a moving day has to be judged with the drive in it.
+  if (hasLegs) working = withTransitBlocks(working, legs);
+
   const analyse = (blocks: BlockLike[]) =>
     analyseTrip(blocks, { tripStyle: "balanced", party });
+  // A day holding a journey must not have a drive stacked on top of it.
+  const repack = hasLegs ? repackWithTransit : repackDay;
 
   const pre = analyse(working);
   console.log(
@@ -177,13 +358,13 @@ export async function generateItinerary(
   // cannot fit (e.g. closed all day). analyseDay is the only judge.
   for (const day of pre.filter((a) => a.warnings.some((w) => w.level === "error"))) {
     const dayBlocks = working.filter((b) => b.date === day.date);
-    let repaired = repackDay(dayBlocks);
+    let repaired = repack(dayBlocks);
     let after = analyseDay(repaired, { tripStyle: "balanced", party });
     const closedIds = new Set(
       after.warnings.filter((w) => w.level === "error" && w.code === "CLOSED").map((w) => w.blockId),
     );
     if (closedIds.size) {
-      repaired = repackDay(repaired.filter((b) => !closedIds.has(b.id)));
+      repaired = repack(repaired.filter((b) => !closedIds.has(b.id)));
       after = analyseDay(repaired, { tripStyle: "balanced", party });
     }
     if (after.warnings.some((w) => w.level === "error")) {
@@ -206,6 +387,14 @@ export async function generateItinerary(
     proposed.blocks.map((b) => b.candidateName?.toLowerCase()).filter(Boolean),
   );
 
+  // A block belongs to the stop whose dates contain its day. Legs cover the
+  // whole range, so this only ever returns undefined on a trip without legs.
+  const legIdFor = (date: string) => {
+    if (!hasLegs) return undefined;
+    const i = legIndexForDate(legs, date);
+    return i >= 0 ? legs[i].id : undefined;
+  };
+
   await prisma.$transaction([
     prisma.block.deleteMany({ where: { tripId, status: "PLANNED" } }),
     ...working
@@ -214,6 +403,7 @@ export async function generateItinerary(
         prisma.block.create({
           data: {
             tripId,
+            legId: legIdFor(b.date),
             date: new Date(`${b.date}T00:00:00.000Z`),
             startTime: b.startTime,
             endTime: b.endTime,

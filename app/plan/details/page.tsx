@@ -125,6 +125,28 @@ export default function DetailsPage() {
         </div>
       </Section>
 
+      <Section title="One place, or a few?">
+        <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-surface">
+          {([false, true] as const).map((v) => (
+            <button
+              key={String(v)}
+              onClick={() => set({ multiCity: v })}
+              className={cn(
+                "px-3 py-2.5 font-poppins text-xs font-semibold transition",
+                s.multiCity === v ? "bg-sea text-white" : "text-ink-2 hover:bg-paper-2",
+              )}
+            >
+              {v ? "A route across several places" : "One place"}
+            </button>
+          ))}
+        </div>
+        {s.multiCity && (
+          <p className="text-xs text-ink-2">
+            We'll suggest ordered routes and split your dates between the stops.
+          </p>
+        )}
+      </Section>
+
       <Section title="Who's travelling?">
         <div className="flex gap-2">
           {(["adult", "kid", "senior"] as const).map((k) => (

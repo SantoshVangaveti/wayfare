@@ -4,14 +4,17 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, MapPin } from "lucide-react";
+import { format, parseISO } from "date-fns";
 import { loadFunnel, type FunnelState } from "@/lib/funnel";
+import { routeLine, shortPlace } from "@/lib/legs";
 import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { Chip } from "@/components/Chip";
 import { Companion } from "@/components/Companion";
 import { themeForInterests } from "@/lib/imagery";
 import { cn } from "@/lib/utils";
 import {
-  createTripFromDestination, suggestDestinationsAction, type DestinationResult,
+  createTripFromDestination, createTripFromRoute, suggestDestinationsAction,
+  type DestinationResult, type RouteResult,
 } from "../actions";
 
 const VERDICT_VARIANT: Record<string, "ok" | "mango" | "neutral"> = {
@@ -24,11 +27,100 @@ const VERDICT_VARIANT: Record<string, "ok" | "mango" | "neutral"> = {
 
 type Status = "loading" | "ready" | "no-key" | "failed";
 
+/** One route option: the stops in order, each with its own why and weather. */
+function RouteCard({
+  route,
+  top,
+  busy,
+  onPick,
+}: {
+  route: RouteResult;
+  top: boolean;
+  busy: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      onClick={onPick}
+      disabled={busy}
+      className={cn(
+        "w-full rounded-2xl border bg-surface p-4 text-left shadow-sm transition hover:border-sea",
+        top ? "border-2 border-sea ring-4 ring-sea-soft" : "border-line",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-poppins text-lg font-bold tracking-tight">
+            {route.title}
+          </div>
+          <div className="mt-0.5 font-mono text-xs tabular-nums text-ink-3">
+            {routeLine(
+              route.stops.map((s) => ({ destination: s.name, nights: s.nights })),
+            )}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="font-mono text-2xl font-bold tabular-nums text-sea">
+            {route.matchScore}%
+          </div>
+          <div className="font-mono text-[10px] uppercase tracking-wide text-ink-3">
+            match
+          </div>
+        </div>
+      </div>
+
+      <ol className="mt-3 space-y-3">
+        {route.stops.map((s, i) => (
+          <li key={`${s.name}-${i}`} className="flex gap-3">
+            <div className="flex flex-col items-center pt-0.5">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sea font-mono text-[10px] font-bold text-white">
+                {i + 1}
+              </span>
+              {i < route.stops.length - 1 && (
+                <span className="mt-1 w-px flex-1 bg-line-2" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1 pb-0.5">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-poppins text-sm font-semibold">
+                  {shortPlace(s.name)}
+                </span>
+                <span className="font-mono text-[11px] tabular-nums text-ink-3">
+                  {format(parseISO(s.startDate), "d MMM")}–
+                  {format(parseISO(s.endDate), "d MMM")} · {s.nights}n
+                </span>
+                {s.weather && (
+                  <Chip variant={VERDICT_VARIANT[s.weather.verdict] ?? "neutral"}>
+                    {s.weather.verdict.replace("_", " ")}
+                  </Chip>
+                )}
+              </div>
+              <div className="mt-1 space-y-0.5 text-xs text-ink-2">
+                {s.why.split("\n").filter(Boolean).map((line, j) => (
+                  <div key={j}>· {line.trim()}</div>
+                ))}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+        <Chip>~₹{Math.round(route.estCostPerDay).toLocaleString("en-IN")}/day</Chip>
+        <span className="font-poppins text-sm font-semibold text-sea">
+          {busy ? "Creating trip…" : "Pick this route →"}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 export default function DestinationsPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<FunnelState | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [results, setResults] = useState<DestinationResult[]>([]);
+  const [routes, setRoutes] = useState<RouteResult[]>([]);
   const [picking, startPick] = useTransition();
   const [pickedName, setPickedName] = useState<string | null>(null);
   const ran = useRef(false);
@@ -52,7 +144,8 @@ export default function DestinationsPage() {
     setStatus("loading");
     suggestDestinationsAction(p).then((res) => {
       if (res.ok) {
-        setResults(res.destinations);
+        if (res.mode === "route") setRoutes(res.routes);
+        else setResults(res.destinations);
         setStatus("ready");
       } else {
         setStatus(res.reason === "no-key" ? "no-key" : "failed");
@@ -66,6 +159,13 @@ export default function DestinationsPage() {
     startPick(() => createTripFromDestination(profile, dest));
   }
 
+  function pickRoute(route: RouteResult) {
+    if (!profile) return;
+    setPickedName(route.title);
+    startPick(() => createTripFromRoute(profile, route));
+  }
+
+  const multi = profile?.multiCity === true;
   const [top, ...rest] = results;
 
   return (
@@ -73,7 +173,7 @@ export default function DestinationsPage() {
       <AmbientBackdrop photo={themeForInterests(profile?.interests ?? [])} />
       <div className="relative z-10 space-y-5">
       <h1 className="font-poppins text-2xl font-bold tracking-tight">
-        Five places that fit
+        {multi ? "Three routes that fit" : "Five places that fit"}
       </h1>
 
       {status === "loading" && (
@@ -82,12 +182,12 @@ export default function DestinationsPage() {
             <Loader2 className="size-4 animate-spin text-sea" />
             Reading what you told us…
           </div>
-          {[0, 1, 2, 3, 4].map((i) => (
+          {(multi ? [0, 1, 2] : [0, 1, 2, 3, 4]).map((i) => (
             <div
               key={i}
               className={cn(
                 "animate-pulse rounded-2xl bg-paper-2",
-                i === 0 ? "h-44" : "h-16",
+                multi ? "h-56" : i === 0 ? "h-44" : "h-16",
               )}
             />
           ))}
@@ -124,7 +224,21 @@ export default function DestinationsPage() {
         />
       )}
 
-      {status === "ready" && top && (
+      {status === "ready" && multi && (
+        <div className="space-y-3">
+          {routes.map((r, i) => (
+            <RouteCard
+              key={`${r.title}-${i}`}
+              route={r}
+              top={i === 0}
+              busy={picking && pickedName === r.title}
+              onPick={() => pickRoute(r)}
+            />
+          ))}
+        </div>
+      )}
+
+      {status === "ready" && !multi && top && (
         <>
           {/* the top match — large */}
           <button

@@ -9,6 +9,7 @@ import { effectiveStatus } from "@/lib/status";
 import { suggestPlacesAction } from "./explore/actions";
 import { analyseTrip, toMin } from "@/lib/feasibility";
 import { toBlockLike } from "@/lib/blocks";
+import { routeLine, shortPlace } from "@/lib/legs";
 import type { Party, TravelProfile } from "@/lib/types";
 import { BlockCard } from "@/components/BlockCard";
 import { DeleteTrip } from "@/components/DeleteTrip";
@@ -29,6 +30,7 @@ export default async function OverviewPage({
     where: { id },
     include: {
       blocks: { orderBy: [{ date: "asc" }, { sortOrder: "asc" }] },
+      legs: { orderBy: { order: "asc" } },
       members: { include: { user: true } },
       expenses: true,
       candidates: { select: { id: true }, take: 1 },
@@ -117,6 +119,41 @@ export default async function OverviewPage({
           </div>
         </div>
       </div>
+
+      {/* the route — only a multi-destination trip has legs */}
+      {trip.legs.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="font-poppins text-base font-bold tracking-tight">
+              The route
+            </h2>
+            <span className="truncate font-mono text-xs tabular-nums text-ink-3">
+              {routeLine(trip.legs)}
+            </span>
+          </div>
+          <ol className="flex gap-2 overflow-x-auto pb-1">
+            {trip.legs.map((leg, i) => (
+              <li
+                key={leg.id}
+                className="flex min-w-40 shrink-0 items-center gap-2.5 rounded-xl border border-line bg-surface p-3 shadow-sm"
+              >
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sea font-mono text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate font-poppins text-sm font-semibold">
+                    {shortPlace(leg.destination)}
+                  </div>
+                  <div className="font-mono text-[11px] tabular-nums text-ink-3">
+                    {format(leg.startDate, "d MMM")}–{format(leg.endDate, "d MMM")} ·{" "}
+                    {leg.nights}n
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {/* day strip */}
       <section className="space-y-2">

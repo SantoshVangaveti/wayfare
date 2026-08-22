@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
 import { getCurrentUser } from "@/lib/session";
 import { tripBudget } from "@/lib/budget";
+import { haversineKm } from "@/lib/feasibility";
 import type { OpenHours } from "@/lib/types";
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
@@ -47,6 +48,18 @@ about 12 activities and 10 restaurants. Rules:
 - Respect the party you are given — include enough gentle options for seniors
   and enough fun for kids, but do not exclude ambitious options; tag them.`;
 
+type PlaceSuggestion = z.infer<typeof PlacesSchema>["candidates"][number];
+
+/** open/close/closedDays → the OpenHours shape the engine reads. */
+function openHoursOf(c: PlaceSuggestion): OpenHours | undefined {
+  if (!c.open || !c.close) return undefined;
+  const openHours: OpenHours = {};
+  for (const d of DAY_KEYS) {
+    if (!c.closedDays?.includes(d)) openHours[d] = [c.open, c.close];
+  }
+  return openHours;
+}
+
 export type PlacesResult =
   | { ok: true }
   | { ok: false; reason: "no-key" | "failed" };
@@ -83,15 +96,91 @@ export async function suggestPlacesAction(tripId: string): Promise<PlacesResult>
     });
 
     await prisma.candidate.createMany({
-      data: res.candidates.map((c) => {
-        let openHours: OpenHours | undefined;
-        if (c.open && c.close) {
-          openHours = {};
-          for (const d of DAY_KEYS) {
-            if (!c.closedDays?.includes(d)) openHours[d] = [c.open, c.close];
-          }
-        }
-        return {
+      data: res.candidates.map((c) => ({
+        tripId,
+        name: c.name,
+        category: c.category,
+        description: c.description,
+        lat: c.lat,
+        lng: c.lng,
+        durationMin: Math.round(c.durationMin),
+        priceLevel: c.priceLevel ?? undefined,
+        rating: c.rating ?? undefined,
+        tags: c.tags,
+        openHours: openHoursOf(c) as object | undefined,
+      })),
+    });
+    revalidatePath(`/trip/${tripId}/explore`);
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof AiNotConfigured) return { ok: false, reason: "no-key" };
+    console.error("suggestPlaces failed:", e);
+    return { ok: false, reason: "failed" };
+  }
+}
+
+/** How far from a stop a candidate can sit and still count as "there". */
+const LEG_RADIUS_KM = 60;
+/** Below this many nearby candidates, a stop has nothing to plan a day from. */
+const LEG_MIN_CANDIDATES = 8;
+
+/**
+ * The per-leg twin of suggestPlacesAction. Candidates stay trip-level (they
+ * have no legId — the schema is frozen), so a stop "has places" when enough
+ * of them sit within LEG_RADIUS_KM of it. Single-destination trips never
+ * reach this function: they have no legs.
+ */
+export async function suggestPlacesForLegAction(
+  tripId: string,
+  legId: string,
+): Promise<PlacesResult> {
+  const leg = await prisma.leg.findUnique({ where: { id: legId } });
+  if (!leg || leg.tripId !== tripId) return { ok: false, reason: "failed" };
+
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    include: { candidates: true },
+  });
+  if (!trip) return { ok: false, reason: "failed" };
+
+  const near = trip.candidates.filter(
+    (c) =>
+      c.lat != null &&
+      c.lng != null &&
+      haversineKm({ lat: c.lat, lng: c.lng }, { lat: leg.lat, lng: leg.lng }) <=
+        LEG_RADIUS_KM,
+  );
+  if (near.length >= LEG_MIN_CANDIDATES) return { ok: true };
+
+  const budget = await tripBudget(tripId);
+  const seen = new Set(trip.candidates.map((c) => c.name.toLowerCase()));
+
+  try {
+    const res = await askAI({
+      feature: "suggestPlaces",
+      system: `${PLACES_SYSTEM}\n- ${budget.brief}`,
+      prompt: JSON.stringify({
+        destination: leg.destination,
+        lat: leg.lat,
+        lng: leg.lng,
+        note: `This is one stop on a multi-stop trip. Every place must be within about ${LEG_RADIUS_KM} km of these coordinates — not at the trip's other stops.`,
+        party: trip.party,
+        budgetPerDay: budget.perDay,
+        currency: budget.currency,
+        dates: {
+          start: leg.startDate.toISOString().slice(0, 10),
+          end: leg.endDate.toISOString().slice(0, 10),
+        },
+      }),
+      schema: PlacesSchema,
+      cache: true,
+      timeoutMs: 45_000,
+    });
+
+    const fresh = res.candidates.filter((c) => !seen.has(c.name.toLowerCase()));
+    if (fresh.length) {
+      await prisma.candidate.createMany({
+        data: fresh.map((c) => ({
           tripId,
           name: c.name,
           category: c.category,
@@ -102,15 +191,15 @@ export async function suggestPlacesAction(tripId: string): Promise<PlacesResult>
           priceLevel: c.priceLevel ?? undefined,
           rating: c.rating ?? undefined,
           tags: c.tags,
-          openHours: openHours as object | undefined,
-        };
-      }),
-    });
+          openHours: openHoursOf(c) as object | undefined,
+        })),
+      });
+    }
     revalidatePath(`/trip/${tripId}/explore`);
     return { ok: true };
   } catch (e) {
     if (e instanceof AiNotConfigured) return { ok: false, reason: "no-key" };
-    console.error("suggestPlaces failed:", e);
+    console.error("suggestPlaces for leg failed:", e);
     return { ok: false, reason: "failed" };
   }
 }

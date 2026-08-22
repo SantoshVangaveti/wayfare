@@ -15,7 +15,10 @@ export default async function PlanPage({
   const { id } = await params;
   const trip = await prisma.trip.findUnique({
     where: { id },
-    include: { blocks: { orderBy: [{ date: "asc" }, { sortOrder: "asc" }] } },
+    include: {
+      blocks: { orderBy: [{ date: "asc" }, { sortOrder: "asc" }] },
+      legs: { orderBy: { order: "asc" } },
+    },
   });
   if (!trip) notFound();
   const party = trip.party as unknown as Party;
@@ -54,6 +57,13 @@ export default async function PlanPage({
       destination={trip.destination}
       party={party}
       days={dates.map((date) => ({ date, blocks: byDate.get(date)! }))}
+      legs={trip.legs.map((l) => ({
+        id: l.id,
+        destination: l.destination,
+        startDate: l.startDate.toISOString().slice(0, 10),
+        endDate: l.endDate.toISOString().slice(0, 10),
+        nights: l.nights,
+      }))}
     />
     </>
   );
