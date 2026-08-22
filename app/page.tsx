@@ -45,6 +45,16 @@ export default async function Landing() {
       </header>
 
       <main className="flex flex-1 flex-col justify-center gap-6 py-10">
+        <div className="text-center">
+          <h1 className="font-poppins text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+            Journey with joy,
+            <br className="sm:hidden" /> return with memories.
+          </h1>
+          <p className="mt-2 text-sm text-ink-2">
+            A trip planner that knows what a day actually feels like — and comes
+            with you.
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {doors.map((d) => (
             <Link
