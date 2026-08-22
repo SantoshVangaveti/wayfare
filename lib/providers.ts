@@ -7,9 +7,8 @@ export const PROVIDERS: Record<ProviderId, {
   google: {
     label: "Google Gemini", keyUrl: "https://aistudio.google.com/apikey", keyPrefix: "AIza",
     models: [
-      { id: "gemini-3-flash",   label: "Gemini 3 Flash — free, 1,500/day", free: true, vision: true },
-      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash — free, 1M TPM",  free: true, vision: true },
-      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash — free",          free: true, vision: true },
+      { id: "gemini-3.6-flash",    label: "Gemini 3.6 Flash — free tier",   free: true, vision: true },
+      { id: "gemini-flash-latest", label: "Gemini Flash (latest alias)",    free: true, vision: true },
     ],
   },
   anthropic: {
@@ -28,4 +27,4 @@ export const PROVIDERS: Record<ProviderId, {
     models: [{ id: "google/gemini-2.0-flash-exp:free", label: "Gemini 2.0 Flash (free)", free: true, vision: true }],
   },
 };
-export const DEFAULTS = { provider: "google" as ProviderId, model: "gemini-3-flash" };
+export const DEFAULTS = { provider: "google" as ProviderId, model: "gemini-3.6-flash" };
