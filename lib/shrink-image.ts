@@ -95,10 +95,33 @@ export async function shrinkImageToDataUrl(file: File): Promise<string> {
   }
 }
 
-/** Images get shrunk and capped; a PDF is read byte-for-byte, because its text
- *  layer is the whole point and re-encoding would destroy it. Throws if the
- *  image can't be made small enough — the caller shows that to the user. */
+/** Images get shrunk and capped; a small PDF is read byte-for-byte, because
+ *  its text layer is the whole point. Throws if the image can't be made small
+ *  enough — the caller shows that to the user. */
 export async function fileToUploadDataUrl(file: File): Promise<string> {
   if (file.type.startsWith("image/")) return shrinkImageToDataUrl(file);
   return readAsDataUrl(file);
+}
+
+/** A PDF's own text, pulled out in the browser.
+ *
+ *  Airline and hotel PDFs are routinely 1–5 MB, and base64 pushes them past
+ *  the request body limit — the upload dies before any of our code runs. The
+ *  words are all we actually need, so we read them here and send a few KB of
+ *  text instead of megabytes of document. pdfjs is imported only when someone
+ *  actually drops a PDF, so nobody else pays for it.
+ *
+ *  Returns null when there is no text layer (a scan), so the caller can fall
+ *  back to uploading it as an image. */
+export async function pdfToText(file: File): Promise<string | null> {
+  try {
+    const { getDocumentProxy, extractText } = await import("unpdf");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const doc = await getDocumentProxy(bytes);
+    const { text } = await extractText(doc, { mergePages: true });
+    const out = String(text).replace(/\s+\n/g, "\n").trim();
+    return out.length >= 20 ? out.slice(0, 20_000) : null;
+  } catch {
+    return null;
+  }
 }

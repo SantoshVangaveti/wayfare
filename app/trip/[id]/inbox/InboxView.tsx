@@ -10,7 +10,7 @@ import type { ExtractedBlock, IngestView } from "@/lib/ingest";
 import { Chip } from "@/components/Chip";
 import { Companion } from "@/components/Companion";
 import { cn } from "@/lib/utils";
-import { fileToUploadDataUrl } from "@/lib/shrink-image";
+import { fileToUploadDataUrl, pdfToText } from "@/lib/shrink-image";
 import {
   addSampleEmail, applyIngest, createImageIngest, createTextIngest,
   extractIngest, rejectIngest,
@@ -86,10 +86,11 @@ export function InboxView({
     });
   }
 
-  // Images are resized in the browser, so the only cap that matters is how
-  // much the tab can decode. PDFs and text go up as-is.
+  // Images are resized and PDFs are read to text in the browser, so the only
+  // cap that matters is how much the tab can decode. Text goes up as-is.
   const MAX_MB = 6;
   const MAX_IMAGE_MB = 40;
+  const MAX_PDF_MB = 25;
 
   const TOO_BIG =
     "That image was too large or failed to upload. Try a smaller screenshot or the PDF option.";
@@ -112,7 +113,7 @@ export function InboxView({
       );
       return;
     }
-    const capMb = isImage ? MAX_IMAGE_MB : MAX_MB;
+    const capMb = isImage ? MAX_IMAGE_MB : isPdf ? MAX_PDF_MB : MAX_MB;
     if (file.size > capMb * 1024 * 1024) {
       setFileNote(
         `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — over the ${capMb} MB limit. Send the key page instead.`,
@@ -125,6 +126,26 @@ export function InboxView({
       try {
         if (isText) {
           await createTextIngest(tripId, await file.text());
+        } else if (isPdf) {
+          // Send the PDF's words, not the PDF. A 4 MB ticket becomes a few KB
+          // of text, which sidesteps the request body limit entirely and is
+          // the same thing the server would have read anyway. A scan has no
+          // text layer, so that falls through to the upload path below.
+          const text = await pdfToText(file);
+          if (text) {
+            await createTextIngest(tripId, text);
+          } else {
+            const dataUrl = await fileToUploadDataUrl(file);
+            const res = await createImageIngest(tripId, dataUrl);
+            if (!res.ok) {
+              setFileNote(
+                res.reason === "too-big"
+                  ? "That PDF is a scan and too large to send as-is. Screenshot the page you need and drop the image."
+                  : TOO_BIG,
+              );
+              return;
+            }
+          }
         } else {
           // Shrinks a screenshot to a ~1600px JPEG before it crosses the
           // wire; a raw phone photo would blow the request body limit and
@@ -439,6 +460,42 @@ function ReviewCard({
 
   const low = parsed.confidence < 0.7;
   const pct = Math.round(parsed.confidence * 100);
+  // Nothing to add: the model found no booking, or every block it found is
+  // missing the date that decides which day it belongs to. Offering a primary
+  // "Add to the trip" here just writes an empty block into someone's plan.
+  const usable = blocks.length > 0 && blocks.some((b) => b.date?.trim());
+
+  if (!usable) {
+    return (
+      <div className="space-y-3 rounded-2xl border border-mango bg-surface p-4 shadow-sm">
+        <div className="flex items-center gap-2">
+          <TriangleAlert className="size-4 shrink-0 text-mango" />
+          <span className="min-w-0 flex-1 truncate font-poppins text-sm font-semibold">
+            {parsed.sourceSummary}
+          </span>
+          <Chip variant="mango">nothing to add</Chip>
+        </div>
+        <p className="text-sm text-ink-2">
+          There's no booking in this one I can put on a day — no date came
+          through. Paste the text instead, or send a clearer screenshot.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={onRetry}
+            className="rounded-xl border border-line px-4 py-2 font-poppins text-sm font-semibold text-ink-2 hover:bg-paper-2"
+          >
+            Try again
+          </button>
+          <button
+            onClick={onReject}
+            className="rounded-xl border border-line px-4 py-2 font-poppins text-sm font-semibold text-ink-2 hover:bg-paper-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
