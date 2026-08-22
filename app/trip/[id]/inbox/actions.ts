@@ -6,14 +6,16 @@ import { format } from "date-fns";
 import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
 import type { ExtractResult } from "@/lib/ingest";
+import { searchPlaces } from "@/lib/location";
 
 // The shape the MODEL fills in. Deliberately flat and free of optionals:
 // a nested object of thirteen nullable fields made Claude hang indefinitely
 // (120s+, no response), while this returns in a few seconds. Unknown values
 // come back as "" and are stripped below.
 const DETAIL_KEYS = [
-  "confirmationNumber", "phone", "address", "checkIn", "checkOut", "cancelBy",
-  "flightNumber", "airline", "terminal", "gate", "seat", "hostName", "wifi", "notes",
+  "confirmationNumber", "phone", "address", "city", "checkIn", "checkOut",
+  "cancelBy", "flightNumber", "airline", "terminal", "gate", "seat",
+  "hostName", "wifi", "notes",
 ] as const;
 
 const AiBlockSchema = z.object({
@@ -87,6 +89,9 @@ host name, wifi credentials. Rules:
 - Times are "HH:MM" 24h destination-local. Dates are "YYYY-MM-DD".
 - Resolve relative dates ("Wed 9th") against the trip dates you are given.
 - Never invent a value. Leave unknown fields null.
+- ALWAYS set "city" to the town or city this happens in (e.g. "Benaulim",
+  "Kalpetta"), not the region or country. It is how the trip finds itself
+  on a map.
 - One block per thing-that-happens-at-a-time; a hotel stay is ONE block at
   check-in whose meta carries checkOut and cancelBy.
 - confidence: your honest 0..1 — below 0.7 the user is shown an editable card.`;
@@ -220,6 +225,88 @@ export async function applyIngest(
     ),
     prisma.ingest.update({ where: { id: ingestId }, data: { status: "applied" } }),
   ]);
+
+  // An imported trip starts with no coordinates, which leaves Explore and the
+  // itinerary builder with nothing to work from. The first booking that
+  // carries a location teaches the trip where it is.
+  const trip = await prisma.trip.findUnique({
+    where: { id: targetTrip },
+    select: {
+      destLat: true, destLng: true, startDate: true, endDate: true, title: true,
+    },
+  });
+  const tripTitle = trip?.title ?? "";
+  if (trip && trip.destLat === 0 && trip.destLng === 0) {
+    // A booking that already carries coordinates settles it outright.
+    const located = await prisma.block.findFirst({
+      where: { tripId: targetTrip, lat: { not: null }, lng: { not: null } },
+    });
+    if (located?.lat != null && located?.lng != null) {
+      await prisma.trip.update({
+        where: { id: targetTrip },
+        data: { destLat: located.lat, destLng: located.lng },
+      });
+    } else {
+      // Otherwise look the place up. Extraction gives names, not coordinates,
+      // and without coordinates Explore and the itinerary builder are blind.
+      // The geocoder knows towns, not hotels, so feed it the place-shaped
+      // parts: the tail of an address, then the trip's own name.
+      const tail = (s: string) =>
+        s.split(",").map((p) => p.trim()).filter(Boolean).slice(-2);
+      const MONTHS =
+        /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+      const clues = [
+        ...parsedBlocks.data.map((b) => b.meta?.city).filter(Boolean),
+        ...parsedBlocks.data.flatMap((b) => (b.meta?.address ? tail(b.meta.address) : [])),
+        ...tail(tripTitle),
+        ...parsedBlocks.data.flatMap((b) => (b.placeName ? tail(b.placeName) : [])),
+      ].filter((c): c is string => !!c && c.length > 2 && !MONTHS.test(c));
+
+      // Where the traveller lives breaks ties: "Goa" matches a town in the
+      // Philippines and Spain too, and a fuzzy hit even returns Genoa.
+      const home = (await prisma.tripMember.findFirst({
+        where: { tripId: targetTrip, role: "owner" },
+        select: { user: { select: { homeCountry: true } } },
+      }))?.user.homeCountry;
+
+      for (const clue of clues) {
+        const hits = await searchPlaces(clue).catch(() => []);
+        const exact = hits.filter(
+          (h) => h.name.toLowerCase() === clue.toLowerCase(),
+        );
+        const hit =
+          exact.find((h) => home && h.countryCode === home) ?? exact[0];
+        if (hit) {
+          await prisma.trip.update({
+            where: { id: targetTrip },
+            data: {
+              destLat: hit.lat,
+              destLng: hit.lng,
+              destination: `${hit.name}${hit.region ? `, ${hit.region}` : ""}`,
+              destCountry: hit.countryCode,
+            },
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // Widen the trip's dates to cover anything that landed outside them —
+  // otherwise an imported flight simply would not show on any day tab.
+  const added = parsedBlocks.data
+    .map((b) => new Date(`${b.date}T00:00:00.000Z`))
+    .filter((d) => !Number.isNaN(d.getTime()));
+  if (trip && added.length) {
+    const earliest = new Date(Math.min(...added.map((d) => d.getTime())));
+    const latest = new Date(Math.max(...added.map((d) => d.getTime())));
+    const data: { startDate?: Date; endDate?: Date } = {};
+    if (earliest < trip.startDate) data.startDate = earliest;
+    if (latest > trip.endDate) data.endDate = latest;
+    if (data.startDate || data.endDate) {
+      await prisma.trip.update({ where: { id: targetTrip }, data });
+    }
+  }
 
   revalidatePath(`/trip/${targetTrip}`, "layout");
   return { ok: true };

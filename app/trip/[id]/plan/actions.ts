@@ -8,6 +8,7 @@ import { analyseDay, analyseTrip, toHHMM, toMin } from "@/lib/feasibility";
 import { toBlockLike } from "@/lib/blocks";
 import { repackDay } from "@/lib/fix";
 import { tripBudget } from "@/lib/budget";
+import { suggestPlacesAction } from "../explore/actions";
 import type { BlockLike, Party } from "@/lib/types";
 
 const ItinBlockSchema = z.object({
@@ -57,7 +58,17 @@ export async function generateItinerary(
   });
   if (!trip) return { ok: false, reason: "failed" };
   const party = (trip.party as unknown as Party) ?? { travellers: [] };
-  const candidates = [...trip.candidates].sort(
+
+  // Nothing to schedule means nothing to build. An imported trip arrives with
+  // no candidates, so find real places first, then plan around the bookings.
+  let candidateRows = trip.candidates;
+  if (candidateRows.length === 0) {
+    await suggestPlacesAction(tripId).catch(() => {});
+    candidateRows = await prisma.candidate.findMany({ where: { tripId } });
+  }
+  if (candidateRows.length === 0) return { ok: false, reason: "failed" };
+
+  const candidates = [...candidateRows].sort(
     (a, b) => b.votes.length - a.votes.length,
   );
 
@@ -111,8 +122,28 @@ export async function generateItinerary(
 
   const candByName = new Map(candidates.map((c) => [c.name.toLowerCase(), c]));
   const subtitleById = new Map<string, string | null>();
+
+  // Never re-create something already booked. The model is told to plan
+  // around confirmed blocks, but it sometimes echoes them back, which shows
+  // up as the same hotel twice on the same day.
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const alreadyBooked = new Set(
+    trip.blocks
+      .filter((b) => b.status !== "PLANNED")
+      .map((b) => `${b.date.toISOString().slice(0, 10)}|${norm(b.title)}`),
+  );
+
   let working: BlockLike[] = proposed.blocks
     .filter((b) => dates.includes(b.date))
+    .filter((b) => {
+      const key = `${b.date}|${norm(b.title)}`;
+      if (alreadyBooked.has(key)) return false;
+      // Also catch near-misses: "Taj Exotica" vs "Taj Exotica Resort & Spa".
+      return ![...alreadyBooked].some((k) => {
+        const [d, t] = k.split("|");
+        return d === b.date && (t.includes(norm(b.title)) || norm(b.title).includes(t));
+      });
+    })
     .map((b, i) => {
       const cand = b.candidateName
         ? candByName.get(b.candidateName.toLowerCase())

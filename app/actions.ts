@@ -10,6 +10,24 @@ export async function switchUser(userId: string) {
   revalidatePath("/", "layout");
 }
 
+/** Pin an imported trip to a real place, so distances, weather and place
+ *  suggestions all have something to work from. */
+export async function setTripDestination(
+  tripId: string,
+  place: { name: string; region?: string; country: string; countryCode: string; lat: number; lng: number },
+) {
+  await prisma.trip.update({
+    where: { id: tripId },
+    data: {
+      destination: `${place.name}${place.region ? `, ${place.region}` : ""}`,
+      destLat: place.lat,
+      destLng: place.lng,
+      destCountry: place.countryCode,
+    },
+  });
+  revalidatePath(`/trip/${tripId}`, "layout");
+}
+
 /** Start early, finish, or reopen — the calendar still auto-starts trips,
  *  this is the explicit override. */
 export async function setTripStatus(

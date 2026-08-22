@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { toBlockLike } from "@/lib/blocks";
 import type { Party } from "@/lib/types";
 import { PlanView, type PlanBlock } from "./PlanView";
+import { SetDestination } from "@/components/SetDestination";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,12 @@ export default async function PlanPage({
   }
 
   return (
+    <>
+      {trip.destLat === 0 && trip.destLng === 0 && (
+        <div className="mb-4">
+          <SetDestination tripId={trip.id} />
+        </div>
+      )}
     <PlanView
       tripId={trip.id}
       currency={trip.currency}
@@ -48,5 +55,6 @@ export default async function PlanPage({
       party={party}
       days={dates.map((date) => ({ date, blocks: byDate.get(date)! }))}
     />
+    </>
   );
 }

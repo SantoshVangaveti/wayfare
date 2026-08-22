@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import type { Party } from "@/lib/types";
 import { ExploreView } from "./ExploreView";
+import { SetDestination } from "@/components/SetDestination";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,11 @@ export default async function ExplorePage({
   const dates: string[] = [];
   for (let t = trip.startDate.getTime(); t <= trip.endDate.getTime(); t += 86_400_000) {
     dates.push(new Date(t).toISOString().slice(0, 10));
+  }
+
+  // Without coordinates there is nothing to suggest and no distance to show.
+  if (trip.destLat === 0 && trip.destLng === 0) {
+    return <SetDestination tripId={trip.id} />;
   }
 
   return (

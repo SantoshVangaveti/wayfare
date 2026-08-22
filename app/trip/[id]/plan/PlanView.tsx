@@ -59,7 +59,9 @@ export function PlanView({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => setDays(initialDays), [initialDays]);
-  const totalBlocks = days.reduce((n, d) => n + d.blocks.length, 0);
+  const hasConfirmed = days.some((d) =>
+    d.blocks.some((b) => b.status === "CONFIRMED" || b.status === "DONE"),
+  );
 
   function buildDays() {
     setBuilding(true);
@@ -365,18 +367,28 @@ export function PlanView({
               </Chip>
             )}
           </div>
-          {totalBlocks < 3 && (
-            <button
-              onClick={buildDays}
-              disabled={building}
-              className={cn(
-                "flex w-full items-center justify-center gap-2 rounded-xl bg-sea px-4 py-2.5 font-poppins text-sm font-semibold text-white transition hover:opacity-90",
-                building && "opacity-60",
-              )}
-            >
-              <Sparkles className="size-4" />
-              {building ? "Building your days…" : "Build my days with AI"}
-            </button>
+          {/* Always available: an imported trip is mostly bookings with empty
+              days between them, which is exactly when this is most useful.
+              Confirmed blocks are kept and planned around. */}
+          <button
+            onClick={buildDays}
+            disabled={building}
+            className={cn(
+              "flex w-full items-center justify-center gap-2 rounded-xl bg-sea px-4 py-2.5 font-poppins text-sm font-semibold text-white transition hover:opacity-90",
+              building && "opacity-60",
+            )}
+          >
+            <Sparkles className="size-4" />
+            {building
+              ? "Building your days…"
+              : hasConfirmed
+                ? "Fill the rest with AI"
+                : "Build my days with AI"}
+          </button>
+          {hasConfirmed && !building && (
+            <p className="text-[11px] text-ink-3">
+              Your booked flights, stays and tickets stay exactly where they are.
+            </p>
           )}
           {analysis && (
             <>
