@@ -45,48 +45,53 @@ export default function InterestsPage() {
   }
 
   return (
-    <div className="relative z-10 space-y-6">
-      {/* the page dresses itself in whatever they've picked so far */}
+    <>
+      {/* Sibling, never a child: nested inside the content it would paint
+          over the cards and the Continue button. */}
       <AmbientBackdrop photo={themeForInterests(state.interests)} />
-      <h1 className="font-poppins text-2xl font-bold tracking-tight">
-        What sounds good?
-      </h1>
+      <div className="relative z-10 space-y-6">
+        <h1 className="font-poppins text-2xl font-bold tracking-tight">
+          What sounds good?
+        </h1>
 
-      <div className="grid grid-cols-2 gap-3">
-        {INTERESTS.map((it) => (
-          <PhotoChoiceCard
-            key={it.key}
-            image={it.img}
-            label={it.label}
-            description={it.desc}
-            selected={state.interests.includes(it.key)}
-            onSelect={() => toggle(it.key)}
+        <div className="grid grid-cols-2 gap-3">
+          {INTERESTS.map((it) => (
+            <PhotoChoiceCard
+              key={it.key}
+              image={it.img}
+              label={it.label}
+              description={it.desc}
+              selected={state.interests.includes(it.key)}
+              onSelect={() => toggle(it.key)}
+            />
+          ))}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm text-ink-2" htmlFor="freetext">
+            Anything else we should know?{" "}
+            <span className="text-ink-3">
+              (optional, but it makes all the difference)
+            </span>
+          </label>
+          <textarea
+            id="freetext"
+            value={state.freeText}
+            onChange={(e) => setState((s) => ({ ...s!, freeText: e.target.value }))}
+            rows={3}
+            placeholder="First trip since Dad's surgery. Somewhere green and calm — Amma is 68 and the kids are 7 and 11."
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-sea"
           />
-        ))}
-      </div>
+        </div>
 
-      <div>
-        <label className="mb-1.5 block text-sm text-ink-2" htmlFor="freetext">
-          Anything else we should know?{" "}
-          <span className="text-ink-3">(optional, but it makes all the difference)</span>
-        </label>
-        <textarea
-          id="freetext"
-          value={state.freeText}
-          onChange={(e) => setState((s) => ({ ...s!, freeText: e.target.value }))}
-          rows={3}
-          placeholder="First trip since Dad's surgery. Somewhere green and calm — Amma is 68 and the kids are 7 and 11."
-          className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-sea"
-        />
+        <button
+          onClick={next}
+          disabled={state.interests.length === 0}
+          className="w-full rounded-xl bg-sea px-4 py-3 font-poppins text-sm font-semibold text-white shadow-sm disabled:opacity-40"
+        >
+          Continue
+        </button>
       </div>
-
-      <button
-        onClick={next}
-        disabled={state.interests.length === 0}
-        className="w-full rounded-xl bg-sea px-4 py-3 font-poppins text-sm font-semibold text-white disabled:opacity-40"
-      >
-        Continue
-      </button>
-    </div>
+    </>
   );
 }
