@@ -141,21 +141,21 @@
 /* Live wallpaper: motion slow enough to feel like weather, not animation.
    One full cycle takes a minute or more, so nothing ever pulls the eye. */
 @keyframes wf-drift {
-  0%   { transform: scale(1.12) translate3d(0, 0, 0); }
-  100% { transform: scale(1.2) translate3d(-2.5%, -1.5%, 0); }
+  0%   { transform: scale(1.15) translate3d(-3%, -2%, 0); }
+  100% { transform: scale(1.28) translate3d(4%, 2.5%, 0); }
 }
 @keyframes wf-glow-a {
-  0%   { transform: translate3d(-6%, 0, 0) scale(1); opacity: 0.55; }
-  100% { transform: translate3d(7%, 3%, 0) scale(1.15); opacity: 0.75; }
+  0%   { transform: translate3d(-10%, 0, 0) scale(1); opacity: 0.5; }
+  100% { transform: translate3d(12%, 5%, 0) scale(1.25); opacity: 0.8; }
 }
 @keyframes wf-glow-b {
-  0%   { transform: translate3d(5%, 2%, 0) scale(1.1); opacity: 0.45; }
-  100% { transform: translate3d(-5%, -2%, 0) scale(1); opacity: 0.6; }
+  0%   { transform: translate3d(9%, 3%, 0) scale(1.15); opacity: 0.4; }
+  100% { transform: translate3d(-9%, -3%, 0) scale(1); opacity: 0.65; }
 }
 
-.wf-drift  { animation: wf-drift 90s ease-in-out infinite alternate; }
-.wf-glow-a { animation: wf-glow-a 34s ease-in-out infinite alternate; }
-.wf-glow-b { animation: wf-glow-b 46s ease-in-out infinite alternate; }
+.wf-drift  { animation: wf-drift 55s ease-in-out infinite alternate; }
+.wf-glow-a { animation: wf-glow-a 26s ease-in-out infinite alternate; }
+.wf-glow-b { animation: wf-glow-b 34s ease-in-out infinite alternate; }
 
 /* Anyone who asks for less motion gets a still image. */
 @media (prefers-reduced-motion: reduce) {
