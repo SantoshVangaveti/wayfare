@@ -4,10 +4,11 @@
 // analyseTrip() in lib/feasibility.ts — pure functions, so reordering
 // re-analyses locally and instantly. Nothing here judges a day itself.
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
-import { ArrowDown, ArrowUp, Wand2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Sparkles, Wand2 } from "lucide-react";
 import {
   analyseTrip, fmtDur, toHHMM, toMin,
 } from "@/lib/feasibility";
@@ -17,7 +18,7 @@ import { LoadBar } from "@/components/LoadBar";
 import { Chip } from "@/components/Chip";
 import { Companion } from "@/components/Companion";
 import { cn } from "@/lib/utils";
-import { fixDayAction, reorderBlocks } from "./actions";
+import { fixDayAction, generateItinerary, reorderBlocks } from "./actions";
 
 export type PlanBlock = BlockLike & {
   subtitle: string | null;
@@ -39,12 +40,36 @@ export function PlanView({
   party: Party;
   days: { date: string; blocks: PlanBlock[] }[];
 }) {
+  const router = useRouter();
   const [days, setDays] = useState(initialDays);
   const firstWithBlocks = initialDays.find((d) => d.blocks.length)?.date;
   const [selected, setSelected] = useState(firstWithBlocks ?? initialDays[0]?.date);
   const [fixNote, setFixNote] = useState<string | null>(null);
   const [fixNoKey, setFixNoKey] = useState(false);
+  const [building, setBuilding] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => setDays(initialDays), [initialDays]);
+  const totalBlocks = days.reduce((n, d) => n + d.blocks.length, 0);
+
+  function buildDays() {
+    setBuilding(true);
+    setFixNote(null);
+    generateItinerary(tripId)
+      .then((res) => {
+        if (res.ok) {
+          setFixNote("Built the days from everyone's votes — checked and repaired.");
+          router.refresh();
+        } else {
+          setFixNote(
+            res.reason === "no-key"
+              ? "No AI key yet — add one in Settings."
+              : "The model hiccuped — try again.",
+          );
+        }
+      })
+      .finally(() => setBuilding(false));
+  }
 
   const money = useMemo(
     () =>
@@ -280,6 +305,19 @@ export function PlanView({
               </Chip>
             )}
           </div>
+          {totalBlocks < 3 && (
+            <button
+              onClick={buildDays}
+              disabled={building}
+              className={cn(
+                "flex w-full items-center justify-center gap-2 rounded-xl bg-sea px-4 py-2.5 font-poppins text-sm font-semibold text-white transition hover:opacity-90",
+                building && "opacity-60",
+              )}
+            >
+              <Sparkles className="size-4" />
+              {building ? "Building your days…" : "Build my days with AI"}
+            </button>
+          )}
           {analysis && (
             <>
               <LoadBar
