@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -7,42 +7,77 @@ import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
 import type { ExtractResult } from "@/lib/ingest";
 
-const MetaSchema = z.object({
-  confirmationNumber: z.string().nullish(),
-  phone: z.string().nullish(),
-  address: z.string().nullish(),
-  checkIn: z.string().nullish(),
-  checkOut: z.string().nullish(),
-  cancelBy: z.string().nullish(),
-  flightNumber: z.string().nullish(),
-  terminal: z.string().nullish(),
-  gate: z.string().nullish(),
-  seat: z.string().nullish(),
-  hostName: z.string().nullish(),
-  wifi: z.string().nullish(),
-  notes: z.string().nullish(),
+// The shape the MODEL fills in. Deliberately flat and free of optionals:
+// a nested object of thirteen nullable fields made Claude hang indefinitely
+// (120s+, no response), while this returns in a few seconds. Unknown values
+// come back as "" and are stripped below.
+const DETAIL_KEYS = [
+  "confirmationNumber", "phone", "address", "checkIn", "checkOut", "cancelBy",
+  "flightNumber", "airline", "terminal", "gate", "seat", "hostName", "wifi", "notes",
+] as const;
+
+const AiBlockSchema = z.object({
+  type: z.enum([
+    "FLIGHT", "TRAIN", "BUS", "FERRY",
+    "LODGING", "ACTIVITY", "MEAL", "TRANSIT", "NOTE",
+  ]),
+  title: z.string(),
+  subtitle: z.string().describe('one line of detail, "" if none'),
+  date: z.string().describe("YYYY-MM-DD, destination-local"),
+  startTime: z.string().describe('HH:MM 24h destination-local, "" if unknown'),
+  endTime: z.string().describe('HH:MM, "" if unknown'),
+  placeName: z.string().describe('"" if unknown'),
+  details: z
+    .array(z.object({ key: z.string(), value: z.string() }))
+    .describe(
+      `operational facts, one per entry. key must be one of: ${DETAIL_KEYS.join(", ")}`,
+    ),
 });
 
+const ExtractSchema = z.object({
+  blocks: z.array(AiBlockSchema),
+  confidence: z.number().min(0).max(1),
+  sourceSummary: z.string().describe("one short line: what this document is"),
+});
+
+/** The stored/applied shape — details folded back into the meta object the
+ *  Vault, Today and BlockCard already read. */
 const BlockSchema = z.object({
   type: z.enum([
     "FLIGHT", "TRAIN", "BUS", "FERRY",
     "LODGING", "ACTIVITY", "MEAL", "TRANSIT", "NOTE",
   ]),
   title: z.string(),
-  subtitle: z.string().nullish(),
-  date: z.string().describe("YYYY-MM-DD, destination-local"),
-  startTime: z.string().nullish().describe("HH:MM, 24h, destination-local"),
-  endTime: z.string().nullish(),
-  placeName: z.string().nullish(),
-  address: z.string().nullish(),
-  meta: MetaSchema,
+  subtitle: z.string().nullable().optional(),
+  date: z.string(),
+  startTime: z.string().nullable().optional(),
+  endTime: z.string().nullable().optional(),
+  placeName: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  meta: z.record(z.string(), z.string()),
 });
 
-const ExtractSchema = z.object({
-  blocks: z.array(BlockSchema),
-  confidence: z.number().min(0).max(1),
-  sourceSummary: z.string().describe("one short line: what this document is"),
-});
+const blank = (s: string | undefined) => (s && s.trim() ? s.trim() : null);
+
+function toStoredBlock(b: z.infer<typeof AiBlockSchema>) {
+  const meta: Record<string, string> = {};
+  for (const d of b.details ?? []) {
+    const v = d?.value?.trim();
+    if (d?.key && v) meta[d.key] = v;
+  }
+  const address = meta.address ?? null;
+  return {
+    type: b.type,
+    title: b.title,
+    subtitle: blank(b.subtitle),
+    date: b.date,
+    startTime: blank(b.startTime),
+    endTime: blank(b.endTime),
+    placeName: blank(b.placeName),
+    address,
+    meta,
+  };
+}
 
 const EXTRACT_SYSTEM = `You turn raw travel bookings (forwarded emails, pasted
 messages, screenshots) into scheduled itinerary blocks. Extract the OPERATIONAL
@@ -75,20 +110,55 @@ export async function extractIngest(ingestId: string): Promise<ExtractActionResu
       )}.`
     : "";
 
+  // rawImage holds a data URL for anything visual — a screenshot OR a PDF.
+  // We read the PDF's own text layer here rather than shipping the document
+  // to the model: it works on every provider, costs a fraction, and can't
+  // hang the way the document path did.
+  const isPdf = ingest.rawImage?.startsWith("data:application/pdf");
+  let pdfText: string | null = null;
+  if (isPdf && ingest.rawImage) {
+    try {
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const bytes = Buffer.from(
+        ingest.rawImage.replace(/^data:application\/pdf;base64,/, ""),
+        "base64",
+      );
+      const doc = await getDocumentProxy(new Uint8Array(bytes));
+      const { text } = await extractText(doc, { mergePages: true });
+      pdfText = String(text).trim();
+    } catch (e) {
+      console.error("pdf text extraction failed:", e);
+    }
+  }
+  // A scanned PDF has no text layer — fail honestly instead of guessing.
+  if (isPdf && (!pdfText || pdfText.length < 20)) {
+    return { ok: false, reason: "failed" };
+  }
+
+  const attachment = ingest.rawImage && !isPdf ? { images: [ingest.rawImage] } : {};
+
   try {
     const parsed = await askAI({
       feature: "extractBlocks",
       system: EXTRACT_SYSTEM,
-      prompt: `${context}\n\nRaw material:\n${ingest.rawText ?? "(image only — read the attached screenshot)"}`,
-      images: ingest.rawImage ? [ingest.rawImage] : undefined,
+      prompt: `${context}\n\nRaw material:\n${
+        pdfText ?? ingest.rawText ?? "(image only — read the attached screenshot)"
+      }`,
+      ...attachment,
       schema: ExtractSchema,
       cache: true,
+      timeoutMs: 30_000,
     });
+    const stored = {
+      blocks: parsed.blocks.map(toStoredBlock),
+      confidence: parsed.confidence,
+      sourceSummary: parsed.sourceSummary,
+    };
     await prisma.ingest.update({
       where: { id: ingestId },
-      data: { parsed: parsed as object, confidence: parsed.confidence },
+      data: { parsed: stored as object, confidence: parsed.confidence },
     });
-    return { ok: true, parsed: parsed as ExtractResult };
+    return { ok: true, parsed: stored as unknown as ExtractResult };
   } catch (e) {
     if (e instanceof AiNotConfigured) return { ok: false, reason: "no-key" };
     console.error("extractBlocks failed:", e);
@@ -153,10 +223,18 @@ export async function createTextIngest(tripId: string, rawText: string) {
   revalidatePath(`/trip/${tripId}/inbox`);
 }
 
+/** Screenshots and PDFs both arrive here as data URLs. */
 export async function createImageIngest(tripId: string, dataUrl: string) {
-  if (!dataUrl.startsWith("data:image/")) return;
+  const isImage = dataUrl.startsWith("data:image/");
+  const isPdf = dataUrl.startsWith("data:application/pdf");
+  if (!isImage && !isPdf) return;
   await prisma.ingest.create({
-    data: { tripId, sourceType: "screenshot", rawImage: dataUrl, status: "pending" },
+    data: {
+      tripId,
+      sourceType: isPdf ? "pdf" : "screenshot",
+      rawImage: dataUrl,
+      status: "pending",
+    },
   });
   revalidatePath(`/trip/${tripId}/inbox`);
 }

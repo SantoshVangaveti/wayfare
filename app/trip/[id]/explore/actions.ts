@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -19,16 +19,16 @@ const PlacesSchema = z.object({
         lat: z.number(),
         lng: z.number(),
         durationMin: z.number(),
-        priceLevel: z.number().min(1).max(4).nullish(),
-        rating: z.number().min(0).max(5).nullish(),
+        priceLevel: z.number().min(1).max(4).optional(),
+        rating: z.number().min(0).max(5).optional(),
         tags: z
           .array(z.string())
           .describe(
             "from: outdoor indoor flat strenuous kid-friendly veg nonveg scenic shopping early plus any allergen present (nuts, shellfish)",
           ),
-        open: z.string().nullish().describe("HH:MM opening time, null if always open"),
-        close: z.string().nullish(),
-        closedDays: z.array(z.enum(DAY_KEYS)).nullish(),
+        open: z.string().optional().describe("HH:MM opening time, null if always open"),
+        close: z.string().optional(),
+        closedDays: z.array(z.enum(DAY_KEYS)).optional(),
       }),
     )
     .min(14)

@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -15,15 +15,15 @@ const ItinBlockSchema = z.object({
     "LODGING", "ACTIVITY", "MEAL", "TRANSIT", "NOTE",
   ]),
   title: z.string(),
-  subtitle: z.string().nullish(),
+  subtitle: z.string().optional(),
   date: z.string().describe("YYYY-MM-DD within the trip range"),
   startTime: z.string().describe("HH:MM 24h destination-local"),
   durationMin: z.number(),
-  placeName: z.string().nullish(),
-  lat: z.number().nullish(),
-  lng: z.number().nullish(),
-  tags: z.array(z.string()).nullish(),
-  candidateName: z.string().nullish().describe("exact candidate name if this block schedules one"),
+  placeName: z.string().optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  tags: z.array(z.string()).optional(),
+  candidateName: z.string().optional().describe("exact candidate name if this block schedules one"),
 });
 
 const ItinSchema = z.object({ blocks: z.array(ItinBlockSchema).min(6) });

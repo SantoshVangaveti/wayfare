@@ -30,6 +30,7 @@ export function InboxView({
   const [states, setStates] = useState<Record<string, CardState>>({});
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [fileNote, setFileNote] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState("");
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -82,17 +83,44 @@ export function InboxView({
     });
   }
 
+  const MAX_MB = 6;
+
   function onFile(file: File | undefined) {
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+    setFileNote(null);
+
+    const isImage = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf";
+    // .txt, .eml, .ics and friends: read the text and treat it as a paste.
+    const isText =
+      file.type.startsWith("text/") ||
+      file.type === "message/rfc822" ||
+      /\.(txt|eml|ics|md)$/i.test(file.name);
+
+    if (!isImage && !isPdf && !isText) {
+      setFileNote(
+        `${file.name} isn't something I can read — try a PDF, a screenshot, or paste the text.`,
+      );
+      return;
+    }
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setFileNote(
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — over the ${MAX_MB} MB limit. Send the key page instead.`,
+      );
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = String(reader.result);
+      const result = String(reader.result);
       startTransition(async () => {
-        await createImageIngest(tripId, dataUrl);
+        if (isText) await createTextIngest(tripId, result);
+        else await createImageIngest(tripId, result);
         router.refresh();
       });
     };
-    reader.readAsDataURL(file);
+    if (isText) reader.readAsText(file);
+    else reader.readAsDataURL(file);
   }
 
   const open = ingests.filter((g) => g.status === "pending");
@@ -162,12 +190,14 @@ export function InboxView({
           )}
         >
           <ImagePlus className="size-6" />
-          <span className="font-poppins text-sm font-semibold">Drop a screenshot</span>
-          <span className="text-xs">or click to choose</span>
+          <span className="font-poppins text-sm font-semibold">
+            Drop a PDF or screenshot
+          </span>
+          <span className="text-xs">tickets, vouchers, confirmations</span>
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf,text/plain,message/rfc822,.eml,.ics,.txt"
             className="hidden"
             onChange={(e) => onFile(e.target.files?.[0])}
           />
@@ -188,6 +218,12 @@ export function InboxView({
           <span className="text-xs">drops a sample email in (demo)</span>
         </button>
       </div>
+
+      {fileNote && (
+        <p className="rounded-xl border border-mango bg-mango-soft px-3 py-2 text-sm text-mango">
+          {fileNote}
+        </p>
+      )}
 
       {/* review cards */}
       {open.length === 0 && handled.length === 0 && (

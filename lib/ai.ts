@@ -33,14 +33,23 @@ export async function askAI<T>(opts: {
   prompt: string;
   schema: z.ZodType<T>;
   images?: string[];               // data URLs or public URLs
+  /** PDFs and other documents, as data URLs. Vision models read these too. */
+  files?: { data: string; mediaType: string }[];
   cache?: boolean;
   timeoutMs?: number;
 }): Promise<T> {
-  const { feature, system, prompt, schema, images, cache = true, timeoutMs = 20_000 } = opts;
+  const {
+    feature, system, prompt, schema, images, files,
+    cache = true, timeoutMs = 20_000,
+  } = opts;
   const { provider, model, apiKey } = await config();
 
   const key = crypto.createHash("sha256")
-    .update([provider, model, system, prompt, ...(images ?? [])].join("|")).digest("hex");
+    .update([
+      provider, model, system, prompt,
+      ...(images ?? []),
+      ...(files ?? []).map((f) => f.data),
+    ].join("|")).digest("hex");
 
   if (cache) {
     const hit = await prisma.aiCache.findUnique({ where: { key } });
@@ -52,10 +61,13 @@ export async function askAI<T>(opts: {
     }
   }
 
-  const messages = images?.length
+  const messages = images?.length || files?.length
     ? [{ role: "user" as const, content: [
         { type: "text" as const, text: prompt },
-        ...images.map((image) => ({ type: "image" as const, image })),
+        ...(images ?? []).map((image) => ({ type: "image" as const, image })),
+        ...(files ?? []).map((f) => ({
+          type: "file" as const, data: f.data, mediaType: f.mediaType,
+        })),
       ] }]
     : undefined;
 
