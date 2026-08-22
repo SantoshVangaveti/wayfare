@@ -5,55 +5,57 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")   // pooled  — runtime
-  directUrl = env("DIRECT_URL")     // direct  — migrations only
+  url       = env("DATABASE_URL") // pooled  — runtime
+  directUrl = env("DIRECT_URL") // direct  — migrations only
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  avatar    String?
-  homeCity  String?
-  homeLat   Float?
-  homeLng   Float?
-  homeCountry String? @default("IN")
-  profile   Json?                       // TravelProfile — see lib/types.ts
-  members   TripMember[]
-  expenses  Expense[]  @relation("payer")
-  photos    Photo[]
-  comments  Comment[]
-  createdAt DateTime @default(now())
+  id          String       @id @default(cuid())
+  name        String
+  avatar      String?
+  homeCity    String?
+  homeLat     Float?
+  homeLng     Float?
+  homeCountry String?      @default("IN")
+  profile     Json? // TravelProfile — see lib/types.ts
+  members     TripMember[]
+  expenses    Expense[]    @relation("payer")
+  photos      Photo[]
+  comments    Comment[]
+  createdAt   DateTime     @default(now())
 }
 
 model Trip {
-  id           String     @id @default(cuid())
-  title        String
-  destination  String
-  destLat      Float
-  destLng      Float
-  destCountry  String?
-  scope        String     @default("domestic")   // domestic | international
-  homeCountry  String?
-  currency     String     @default("INR")        // destination currency
-  homeCurrency String     @default("INR")
-  startDate    DateTime
-  endDate      DateTime
-  coverImage   String?
-  status       TripStatus @default(PLANNING)
-  origin       String     @default("planned")    // planned | imported
-  party        Json?                             // Party — see lib/types.ts
-  inboundAddress String?  @unique                // trip-a7x2@in.wayfare.app
-  shareId      String?    @unique                // long random, unlisted
-  shareLevel   String     @default("itinerary")  // itinerary | everything
-  packingJson  Json?
-  members      TripMember[]
-  blocks       Block[]
-  candidates   Candidate[]
-  expenses     Expense[]
-  photos       Photo[]
-  ingests      Ingest[]
-  createdAt    DateTime   @default(now())
+  id             String       @id @default(cuid())
+  title          String
+  destination    String
+  destLat        Float
+  destLng        Float
+  destCountry    String?
+  scope          String       @default("domestic") // domestic | international
+  homeCountry    String?
+  currency       String       @default("INR") // destination currency
+  homeCurrency   String       @default("INR")
+  startDate      DateTime
+  endDate        DateTime
+  coverImage     String?
+  status         TripStatus   @default(PLANNING)
+  origin         String       @default("planned") // planned | imported
+  party          Json? // Party — see lib/types.ts
+  inboundAddress String?      @unique // trip-a7x2@in.wayfare.app
+  shareId        String?      @unique // long random, unlisted
+  shareLevel     String       @default("itinerary") // itinerary | everything
+  packingJson    Json?
+  members        TripMember[]
+  blocks         Block[]
+  legs           Leg[]
+  candidates     Candidate[]
+  expenses       Expense[]
+  photos         Photo[]
+  ingests        Ingest[]
+  createdAt      DateTime     @default(now())
 }
+
 enum TripStatus {
   PLANNING
   BOOKED
@@ -66,8 +68,9 @@ model TripMember {
   tripId String
   userId String
   role   String @default("member")
-  trip   Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  user   User @relation(fields: [userId], references: [id])
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
   @@unique([tripId, userId])
 }
 
@@ -75,8 +78,9 @@ model TripMember {
 model Block {
   id          String      @id @default(cuid())
   tripId      String
-  date        DateTime                       // day bucket, midnight, destination-local
-  startTime   String?                        // "09:30" — NEVER converted to UTC
+  legId       String? // null = trip-level (single-destination, legacy)
+  date        DateTime // day bucket, midnight, destination-local
+  startTime   String? // "09:30" — NEVER converted to UTC
   endTime     String?
   type        BlockType
   title       String
@@ -91,17 +95,21 @@ model Block {
   status      BlockStatus @default(PLANNED)
   sourceUrl   String?
   tags        String[]    @default([])
-  openHours   Json?                          // OpenHours
-  attendees   String[]    @default([])       // userIds; empty === everyone
-  meta        Json?                          // conf number, phone, PNR, wifi, gate…
+  openHours   Json? // OpenHours
+  attendees   String[]    @default([]) // userIds; empty === everyone
+  meta        Json? // conf number, phone, PNR, wifi, gate…
   sortOrder   Int         @default(0)
   createdById String?
-  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trip        Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  leg         Leg?        @relation(fields: [legId], references: [id], onDelete: SetNull)
   expenses    Expense[]
   photos      Photo[]
   comments    Comment[]
+
   @@index([tripId, date])
+  @@index([legId])
 }
+
 enum BlockType {
   FLIGHT
   TRAIN
@@ -121,11 +129,32 @@ enum BlockStatus {
   SKIPPED
 }
 
+/// An ordered stop within a multi-destination trip (Kochi → Munnar → Alleppey).
+/// Legacy single-destination trips simply have no legs; their blocks keep legId null.
+model Leg {
+  id          String   @id @default(cuid())
+  tripId      String
+  order       Int // 0-based position in the route
+  destination String // "Munnar, Kerala"
+  lat         Float
+  lng         Float
+  country     String?
+  startDate   DateTime // first day in this leg (midnight, local)
+  endDate     DateTime // last day in this leg
+  nights      Int      @default(0)
+  coverImage  String?
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  blocks      Block[]
+  createdAt   DateTime @default(now())
+
+  @@index([tripId, order])
+}
+
 model Candidate {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   tripId      String
   name        String
-  category    String                          // activity | restaurant | shopping | landmark
+  category    String // activity | restaurant | shopping | landmark
   description String?
   lat         Float?
   lng         Float?
@@ -135,9 +164,9 @@ model Candidate {
   tags        String[] @default([])
   image       String?
   rating      Float?
-  votes       String[] @default([])           // userIds — feeds buildItinerary
+  votes       String[] @default([]) // userIds — feeds buildItinerary
   scheduled   Boolean  @default(false)
-  trip        Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
 }
 
 model Comment {
@@ -146,8 +175,8 @@ model Comment {
   userId    String
   body      String
   createdAt DateTime @default(now())
-  block     Block @relation(fields: [blockId], references: [id], onDelete: Cascade)
-  user      User  @relation(fields: [userId], references: [id])
+  block     Block    @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model Expense {
@@ -159,11 +188,11 @@ model Expense {
   currency    String   @default("INR")
   description String
   splitType   String   @default("equal")
-  shares      Json                            // { userId: amountOwed }
+  shares      Json // { userId: amountOwed }
   createdAt   DateTime @default(now())
-  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  block Block? @relation(fields: [blockId], references: [id])
-  payer User   @relation("payer", fields: [payerId], references: [id])
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  block       Block?   @relation(fields: [blockId], references: [id])
+  payer       User     @relation("payer", fields: [payerId], references: [id])
 }
 
 model Photo {
@@ -174,23 +203,23 @@ model Photo {
   caption    String?
   takenAt    DateTime?
   uploaderId String?
-  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  block Block? @relation(fields: [blockId], references: [id])
-  user  User?  @relation(fields: [uploaderId], references: [id])
+  trip       Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  block      Block?    @relation(fields: [blockId], references: [id])
+  user       User?     @relation(fields: [uploaderId], references: [id])
 }
 
 /// Raw inbound material. Extraction is LAZY — runs when the Inbox screen loads.
 model Ingest {
   id         String   @id @default(cuid())
   tripId     String?
-  sourceType String                            // email | screenshot | text | pdf | link
+  sourceType String // email | screenshot | text | pdf | link
   rawText    String?
   rawImage   String?
   parsed     Json?
   confidence Float?
-  status     String   @default("pending")      // pending | applied | rejected
+  status     String   @default("pending") // pending | applied | rejected
   createdAt  DateTime @default(now())
-  trip Trip? @relation(fields: [tripId], references: [id])
+  trip       Trip?    @relation(fields: [tripId], references: [id])
 }
 
 /// Single row. The AI key lives here, not in env — so a public deploy is safe.
@@ -198,27 +227,28 @@ model AppSettings {
   id         String   @id @default("singleton")
   provider   String   @default("google")
   model      String   @default("gemini-3-flash")
-  apiKeyEnc  String?                           // AES-256-GCM
-  apiKeyHint String?                           // "AIzaSy…k9f2a"
+  apiKeyEnc  String? // AES-256-GCM
+  apiKeyHint String? // "AIzaSy…k9f2a"
   updatedAt  DateTime @updatedAt
 }
 
 model AiCache {
-  key       String   @id                       // sha256(provider|model|system|prompt)
+  key       String   @id // sha256(provider|model|system|prompt)
   value     Json
   createdAt DateTime @default(now())
 }
 
 /// Per-call usage, so the settings meter shows real numbers.
 model AiUsage {
-  id         String   @id @default(cuid())
-  feature    String                            // suggestPlaces | extractBlocks | …
-  provider   String
-  model      String
-  inTokens   Int      @default(0)
-  outTokens  Int      @default(0)
-  costUsd    Float    @default(0)
-  cached     Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  feature   String // suggestPlaces | extractBlocks | …
+  provider  String
+  model     String
+  inTokens  Int      @default(0)
+  outTokens Int      @default(0)
+  costUsd   Float    @default(0)
+  cached    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
   @@index([createdAt])
 }
