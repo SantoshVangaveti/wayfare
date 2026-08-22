@@ -39,7 +39,7 @@ export async function TripShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur print:hidden">
         <div className="mx-auto w-full max-w-5xl px-4">
           <div className="flex items-center justify-between gap-3 py-3">
             <Link
