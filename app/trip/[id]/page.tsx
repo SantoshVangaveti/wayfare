@@ -1,10 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
+import { after } from "next/server";
 import { notFound, redirect } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { BedDouble, Luggage } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { effectiveStatus } from "@/lib/status";
+import { suggestPlacesAction } from "./explore/actions";
 import { analyseTrip, toMin } from "@/lib/feasibility";
 import { toBlockLike } from "@/lib/blocks";
 import type { Party, TravelProfile } from "@/lib/types";
@@ -29,10 +31,19 @@ export default async function OverviewPage({
       blocks: { orderBy: [{ date: "asc" }, { sortOrder: "asc" }] },
       members: { include: { user: true } },
       expenses: true,
+      candidates: { select: { id: true }, take: 1 },
     },
   });
   if (!trip) notFound();
   if (effectiveStatus(trip) === "ACTIVE") redirect(`/trip/${id}/today`);
+
+  // Second chance to warm Explore: opening the Overview of a trip that has
+  // no candidates yet starts the places call in the background.
+  if (trip.candidates.length === 0 && trip.destLat !== 0) {
+    after(async () => {
+      await suggestPlacesAction(trip.id).catch(() => {});
+    });
+  }
 
   const party = trip.party as unknown as Party;
   const likes = trip.blocks.map(toBlockLike);

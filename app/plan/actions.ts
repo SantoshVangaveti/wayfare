@@ -1,9 +1,11 @@
 "use server";
 
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
+import { suggestPlacesAction } from "@/app/trip/[id]/explore/actions";
 import { weatherFor, type Verdict } from "@/lib/weather";
 import { getCurrentUser } from "@/lib/session";
 import type { FunnelState } from "@/lib/funnel";
@@ -155,6 +157,14 @@ export async function createTripFromDestination(
       shareId: rand(17),
       members: user ? { create: { userId: user.id, role: "owner" } } : undefined,
     },
+  });
+
+  // Warm Explore while the user is still reading the Overview: the places
+  // call is the slow one, and by the time they open the tab the Candidate
+  // rows are already in the database. after() keeps it alive past the
+  // response, and a failure here costs nothing — the screen still fetches.
+  after(async () => {
+    await suggestPlacesAction(trip.id).catch(() => {});
   });
 
   redirect(`/trip/${trip.id}`);

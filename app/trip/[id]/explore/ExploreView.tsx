@@ -129,7 +129,8 @@ export function ExploreView({
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm text-ink-2">
             <Loader2 className="size-4 animate-spin text-sea" />
-            Finding real places around {destination}…
+            Finding real places around {destination} — worth the wait, this
+            happens once.
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[...Array(6)].map((_, i) => (
