@@ -5,6 +5,7 @@ import { effectiveStatus } from "@/lib/status";
 import { haversineKm } from "@/lib/feasibility";
 import { weatherFor } from "@/lib/weather";
 import { themeForDay } from "@/lib/imagery";
+import { dayPhoto } from "@/lib/place-photo";
 import type { StoryDay, StoryStats } from "@/components/TripStory";
 import { StoryView } from "./StoryView";
 
@@ -42,6 +43,21 @@ export default async function StoryPage({
     photosByBlock.get(p.blockId)!.push(p.url);
   }
 
+  // Real photographs of the real places, fetched in parallel. Falls back to
+  // a themed abstract only when Wikipedia has nothing for that place.
+  const realPhotos = await Promise.all(
+    dates.map((date) => {
+      const dayBlocks = trip.blocks.filter(
+        (b) => b.date.toISOString().slice(0, 10) === date,
+      );
+      const hero =
+        dayBlocks.find((b) => b.type === "ACTIVITY" && b.placeName)?.placeName ??
+        dayBlocks.find((b) => b.type === "ACTIVITY")?.title ??
+        dayBlocks.find((b) => b.placeName)?.placeName;
+      return dayPhoto(hero ?? undefined, trip.destination).catch(() => null);
+    }),
+  );
+
   const days: StoryDay[] = dates.map((date, i) => {
     const blocks = trip.blocks.filter(
       (b) => b.date.toISOString().slice(0, 10) === date,
@@ -67,7 +83,7 @@ export default async function StoryPage({
       weather:
         w.status === "fulfilled" ? `${w.value.avgTempC}°C ${w.value.verdict}` : null,
       photos: blocks.flatMap((b) => photosByBlock.get(b.id) ?? []),
-      photo: theme.photo,
+      photo: realPhotos[i] ?? theme.photo,
       tint: theme.tint,
     };
   });

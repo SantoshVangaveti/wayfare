@@ -13,8 +13,10 @@ const THEMES: Theme[] = [
     photo: "1432405972618-c60b0225b8f9", tint: "from-[#0C7C86] to-[#0F2530]" },
   { keys: ["safari", "wildlife", "sanctuary", "elephant", "jeep"],
     photo: "1549366021-9f761d450615", tint: "from-[#D25E18] to-[#0F2530]" },
+  // Deliberately NOT a recognisable landmark: a stand-in that looks like a
+  // famous place the traveller isn't visiting is worse than an abstract one.
   { keys: ["cave", "heritage", "temple", "fort", "museum", "church"],
-    photo: "1548013146-72479768bada", tint: "from-[#6E8791] to-[#0F2530]" },
+    photo: "1563822249366-3efb23b8e0c9", tint: "from-[#6E8791] to-[#0F2530]" },
   { keys: ["tea", "estate", "plantation", "spice", "garden", "park", "bamboo"],
     photo: "1523920290228-4f321a939b4c", tint: "from-[#178A69] to-[#0F2530]" },
   { keys: ["lake", "dam", "boat", "kayak", "backwater"],
@@ -50,7 +52,7 @@ export function themeForInterests(interests: string[]): string {
     city: "1480714378408-67cf0d13bc1b",
     nature: "1472214103451-9374bd1c798e",
     food: "1414235077428-338989a2e8c0",
-    heritage: "1548013146-72479768bada",
+    heritage: "1563822249366-3efb23b8e0c9",
   };
   return img(map[interests[0] ?? ""] ?? FALLBACK.photo, 1600);
 }

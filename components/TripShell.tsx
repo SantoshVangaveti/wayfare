@@ -3,6 +3,7 @@ import { Settings } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import { themeForDay } from "@/lib/imagery";
+import { placePhoto } from "@/lib/place-photo";
 import { AmbientBackdrop } from "./AmbientBackdrop";
 import { TabBar } from "./TabBar";
 import { UserSwitcher } from "./UserSwitcher";
@@ -18,24 +19,33 @@ export async function TripShell({
   status: string;
   children: React.ReactNode;
 }) {
-  const [users, current, blocks] = await Promise.all([
+  // One round trip per thing, all at once — a sequential extra query here
+  // exhausts the pooled connection and times the whole page out.
+  const [users, current, trip] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "asc" },
       select: { id: true, name: true, avatar: true },
     }),
     getCurrentUser(),
-    prisma.block.findMany({
-      where: { tripId },
-      select: { title: true, subtitle: true, tags: true },
-      take: 40,
+    prisma.trip.findUnique({
+      where: { id: tripId },
+      select: {
+        destination: true,
+        blocks: { select: { title: true, subtitle: true, tags: true }, take: 40 },
+      },
     }),
   ]);
+  const blocks = trip?.blocks ?? [];
 
-  // The backdrop is drawn from what this trip is actually made of.
-  const backdrop = themeForDay(
-    blocks.map((b) => `${b.title} ${b.subtitle ?? ""}`),
-    blocks.flatMap((b) => b.tags),
-  ).photo;
+  // The backdrop is a real photograph of where they're actually going;
+  // the themed abstract is only the safety net.
+  const real = trip ? await placePhoto(trip.destination).catch(() => null) : null;
+  const backdrop =
+    real ??
+    themeForDay(
+      blocks.map((b) => `${b.title} ${b.subtitle ?? ""}`),
+      blocks.flatMap((b) => b.tags),
+    ).photo;
 
   const base = `/trip/${tripId}`;
   const tabs = [
