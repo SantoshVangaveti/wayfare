@@ -9,11 +9,10 @@ const D = (d: string) => new Date(`${d}T00:00:00.000Z`);
 const IMG = (id: string) => `https://images.unsplash.com/photo-${id}?w=800&q=70`;
 
 async function main() {
-  await db.aiUsage.deleteMany(); await db.aiCache.deleteMany();
-  await db.comment.deleteMany(); await db.photo.deleteMany();
-  await db.expense.deleteMany(); await db.ingest.deleteMany();
-  await db.candidate.deleteMany(); await db.block.deleteMany();
-  await db.tripMember.deleteMany(); await db.trip.deleteMany(); await db.user.deleteMany();
+  // SCOPED reset. This only ever rebuilds the demo trip — trips you or a
+  // teammate created are left alone. (It used to wipe the whole database,
+  // which ate a real in-progress trip. Never again.)
+  await db.trip.delete({ where: { id: "trip_wayanad" } }).catch(() => {});
 
   const people = [
     { id: "u_maya",   name: "Maya",   avatar: "M", diet: "veg" },
@@ -22,19 +21,26 @@ async function main() {
     { id: "u_ira",    name: "Ira",    avatar: "I", diet: "veg" },
     { id: "u_amma",   name: "Amma",   avatar: "A", diet: "veg" },
   ];
+  const profile = {
+    interests: ["mountains", "nature", "food"],
+    freeText: "First proper trip since Dad's surgery. Somewhere green and calm, nothing strenuous. Amma is 68 and the kids are 7 and 11.",
+    tripStyle: "balanced", scope: "domestic",
+    homeCity: "Bengaluru", homeCountry: "IN", homeLat: 12.9716, homeLng: 77.5946,
+    transport: ["flight", "road"], stayTypes: ["homestay", "cabin"],
+    budgetPerDay: 6000, currency: "INR",
+  };
   for (const p of people) {
-    await db.user.create({ data: {
-      id: p.id, name: p.name, avatar: p.avatar,
+    // Upsert, not create: these users may own other trips.
+    const data = {
+      name: p.name, avatar: p.avatar,
       homeCity: "Bengaluru", homeLat: 12.9716, homeLng: 77.5946, homeCountry: "IN",
-      profile: {
-        interests: ["mountains", "nature", "food"],
-        freeText: "First proper trip since Dad's surgery. Somewhere green and calm, nothing strenuous. Amma is 68 and the kids are 7 and 11.",
-        tripStyle: "balanced", scope: "domestic",
-        homeCity: "Bengaluru", homeCountry: "IN", homeLat: 12.9716, homeLng: 77.5946,
-        transport: ["flight", "road"], stayTypes: ["homestay", "cabin"],
-        budgetPerDay: 6000, currency: "INR",
-      },
-    } });
+      profile,
+    };
+    await db.user.upsert({
+      where: { id: p.id },
+      create: { id: p.id, ...data },
+      update: data,
+    });
   }
 
   const trip = await db.trip.create({ data: {
@@ -226,8 +232,10 @@ Free cancellation until 04 Sep 2026.` },
 Bring printed ID for the permit. 2400 for the vehicle. — Shaji, 9847112233` },
   ] });
 
+  const others = await db.trip.count({ where: { id: { not: "trip_wayanad" } } });
   console.log("Seeded: 1 trip, 5 travellers, 21 blocks, 8 candidates, 12 expenses, 2 pending ingests.");
   console.log("Day 3 (Wed 9 Sep) is deliberately broken — 2 errors, 3 warnings.");
+  console.log(`Left alone: ${others} other trip${others === 1 ? "" : "s"}.`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => db.$disconnect());
