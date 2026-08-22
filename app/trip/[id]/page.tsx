@@ -10,6 +10,7 @@ import { toBlockLike } from "@/lib/blocks";
 import type { Party, TravelProfile } from "@/lib/types";
 import { BlockCard } from "@/components/BlockCard";
 import { DeleteTrip } from "@/components/DeleteTrip";
+import { TripStateControls } from "@/components/TripStateControls";
 import { LoadBar } from "@/components/LoadBar";
 import { Chip } from "@/components/Chip";
 import { cn } from "@/lib/utils";
@@ -224,7 +225,10 @@ export default async function OverviewPage({
         </Link>
       </div>
 
-      <DeleteTrip tripId={trip.id} title={trip.title} />
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+        <TripStateControls tripId={trip.id} status={trip.status} />
+        <DeleteTrip tripId={trip.id} title={trip.title} />
+      </div>
     </div>
   );
 }

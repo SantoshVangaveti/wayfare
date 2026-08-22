@@ -10,6 +10,7 @@ import { mapsUrl, telUrl } from "@/lib/maps";
 import { BlockCard } from "@/components/BlockCard";
 import { Chip } from "@/components/Chip";
 import { Companion } from "@/components/Companion";
+import { TripStateControls } from "@/components/TripStateControls";
 import { cn } from "@/lib/utils";
 import { toggleBlockDone } from "./actions";
 import type { Block, User } from "@prisma/client";
@@ -225,6 +226,10 @@ export default async function TodayPage({
           }
         />
       )}
+
+      <div className="flex justify-end pt-2">
+        <TripStateControls tripId={trip.id} status={trip.status} />
+      </div>
     </div>
   );
 }
