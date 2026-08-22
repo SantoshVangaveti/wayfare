@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
 import type { ExtractResult } from "@/lib/ingest";
 import { searchPlaces } from "@/lib/location";
+// A plain number — the rest of that module is browser-only but never runs here.
+import { MAX_UPLOAD_CHARS } from "@/lib/shrink-image";
 
 // The shape the MODEL fills in. Deliberately flat and free of optionals:
 // a nested object of thirteen nullable fields made Claude hang indefinitely
@@ -328,11 +330,20 @@ export async function createTextIngest(tripId: string, rawText: string) {
   revalidatePath(`/trip/${tripId}/inbox`);
 }
 
-/** Screenshots and PDFs both arrive here as data URLs. */
-export async function createImageIngest(tripId: string, dataUrl: string) {
+/** Screenshots and PDFs both arrive here as data URLs. Screenshots are shrunk
+ *  in the browser first (lib/shrink-image.ts) — one that somehow arrives
+ *  oversized anyway is refused with a reason the Inbox can show, rather than
+ *  vanishing into the request body limit. PDFs go up untouched. */
+export async function createImageIngest(
+  tripId: string,
+  dataUrl: string,
+): Promise<{ ok: true } | { ok: false; reason: "shape" | "too-big" }> {
   const isImage = dataUrl.startsWith("data:image/");
   const isPdf = dataUrl.startsWith("data:application/pdf");
-  if (!isImage && !isPdf) return;
+  if (!isImage && !isPdf) return { ok: false, reason: "shape" };
+  if (isImage && dataUrl.length > MAX_UPLOAD_CHARS) {
+    return { ok: false, reason: "too-big" };
+  }
   await prisma.ingest.create({
     data: {
       tripId,
@@ -342,6 +353,7 @@ export async function createImageIngest(tripId: string, dataUrl: string) {
     },
   });
   revalidatePath(`/trip/${tripId}/inbox`);
+  return { ok: true };
 }
 
 /** The "Connect Gmail" demo door: drops a realistic sample email in. */

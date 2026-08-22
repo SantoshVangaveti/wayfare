@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Check, Copy, ImagePlus, Inbox, Loader2, Mail, MessageSquareText, X,
+  Check, Copy, ImagePlus, Inbox, Loader2, Mail, MessageSquareText,
+  TriangleAlert, X,
 } from "lucide-react";
 import type { ExtractedBlock, IngestView } from "@/lib/ingest";
 import { Chip } from "@/components/Chip";
 import { Companion } from "@/components/Companion";
 import { cn } from "@/lib/utils";
+import { fileToUploadDataUrl } from "@/lib/shrink-image";
 import {
   addSampleEmail, applyIngest, createImageIngest, createTextIngest,
   extractIngest, rejectIngest,
@@ -31,6 +33,7 @@ export function InboxView({
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [fileNote, setFileNote] = useState<string | null>(null);
+  const [readingFile, setReadingFile] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -83,7 +86,13 @@ export function InboxView({
     });
   }
 
+  // Images are resized in the browser, so the only cap that matters is how
+  // much the tab can decode. PDFs and text go up as-is.
   const MAX_MB = 6;
+  const MAX_IMAGE_MB = 40;
+
+  const TOO_BIG =
+    "That image was too large or failed to upload. Try a smaller screenshot or the PDF option.";
 
   function onFile(file: File | undefined) {
     if (!file) return;
@@ -103,24 +112,47 @@ export function InboxView({
       );
       return;
     }
-    if (file.size > MAX_MB * 1024 * 1024) {
+    const capMb = isImage ? MAX_IMAGE_MB : MAX_MB;
+    if (file.size > capMb * 1024 * 1024) {
       setFileNote(
-        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — over the ${MAX_MB} MB limit. Send the key page instead.`,
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — over the ${capMb} MB limit. Send the key page instead.`,
       );
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result);
-      startTransition(async () => {
-        if (isText) await createTextIngest(tripId, result);
-        else await createImageIngest(tripId, result);
+    setReadingFile(true);
+    startTransition(async () => {
+      try {
+        if (isText) {
+          await createTextIngest(tripId, await file.text());
+        } else {
+          // Shrinks a screenshot to a ~1600px JPEG before it crosses the
+          // wire; a raw phone photo would blow the request body limit and
+          // the action would never run.
+          const dataUrl = await fileToUploadDataUrl(file);
+          const res = await createImageIngest(tripId, dataUrl);
+          if (!res.ok) {
+            setFileNote(
+              res.reason === "too-big"
+                ? TOO_BIG
+                : `${file.name} isn't something I can read — try a PDF, a screenshot, or paste the text.`,
+            );
+            return;
+          }
+        }
         router.refresh();
-      });
-    };
-    if (isText) reader.readAsText(file);
-    else reader.readAsDataURL(file);
+      } catch {
+        // Decode failure, an oversized file, or the request itself falling
+        // over. Whichever it was, say so — never fail quietly.
+        setFileNote(
+          isImage
+            ? TOO_BIG
+            : `${file.name} was too large or failed to upload. Try a smaller file, or paste the text.`,
+        );
+      } finally {
+        setReadingFile(false);
+      }
+    });
   }
 
   const open = ingests.filter((g) => g.status === "pending");
@@ -172,6 +204,7 @@ export function InboxView({
 
         <button
           onClick={() => fileRef.current?.click()}
+          disabled={readingFile}
           onDragOver={(e) => {
             e.preventDefault();
             setDragging(true);
@@ -189,9 +222,13 @@ export function InboxView({
               : "border-line-2 text-ink-3 hover:border-sea hover:text-sea",
           )}
         >
-          <ImagePlus className="size-6" />
+          {readingFile ? (
+            <Loader2 className="size-6 animate-spin text-sea" />
+          ) : (
+            <ImagePlus className="size-6" />
+          )}
           <span className="font-poppins text-sm font-semibold">
-            Drop a PDF or screenshot
+            {readingFile ? "Preparing it…" : "Drop a PDF or screenshot"}
           </span>
           <span className="text-xs">tickets, vouchers, confirmations</span>
           <input
@@ -199,7 +236,11 @@ export function InboxView({
             type="file"
             accept="image/*,application/pdf,text/plain,message/rfc822,.eml,.ics,.txt"
             className="hidden"
-            onChange={(e) => onFile(e.target.files?.[0])}
+            onChange={(e) => {
+              const picked = e.target.files?.[0];
+              e.target.value = ""; // so the same file can be picked twice
+              onFile(picked);
+            }}
           />
         </button>
 
@@ -220,8 +261,19 @@ export function InboxView({
       </div>
 
       {fileNote && (
-        <p className="rounded-xl border border-mango bg-mango-soft px-3 py-2 text-sm text-mango">
-          {fileNote}
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-xl border border-mango bg-mango-soft px-3 py-2 text-sm text-mango"
+        >
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          <span>{fileNote}</span>
+          <button
+            onClick={() => setFileNote(null)}
+            aria-label="Dismiss"
+            className="ml-auto shrink-0 opacity-60 hover:opacity-100"
+          >
+            <X className="size-4" />
+          </button>
         </p>
       )}
 
