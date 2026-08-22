@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
+import { tripBudget } from "@/lib/budget";
 
 const StaysSchema = z.object({
   stays: z
@@ -50,10 +51,12 @@ export async function suggestStaysAction(
   const trip = await prisma.trip.findUnique({ where: { id: tripId } });
   if (!trip) return { ok: false, reason: "failed" };
 
+  const budget = await tripBudget(tripId);
+
   try {
     const res = await askAI({
       feature: "suggestStays",
-      system: STAYS_SYSTEM,
+      system: `${STAYS_SYSTEM}\n- ${budget.brief} A night's room should sit well inside that, since activities and meals come out of the same money.`,
       prompt: JSON.stringify({
         destination: trip.destination,
         party: trip.party,
@@ -61,7 +64,8 @@ export async function suggestStaysAction(
         nights: Math.round(
           (trip.endDate.getTime() - trip.startDate.getTime()) / 86_400_000,
         ),
-        currency: trip.currency,
+        budgetPerDay: budget.perDay,
+        currency: budget.currency,
       }),
       schema: StaysSchema,
       cache: true,

@@ -9,6 +9,7 @@ import { suggestPlacesAction } from "@/app/trip/[id]/explore/actions";
 import { weatherFor, type Verdict } from "@/lib/weather";
 import { getCurrentUser } from "@/lib/session";
 import type { FunnelState } from "@/lib/funnel";
+import type { Traveller } from "@/lib/types";
 
 const DestSchema = z.object({
   destinations: z
@@ -136,6 +137,46 @@ export async function createTripFromDestination(
   const user = await getCurrentUser();
   const domestic = (profile.home?.countryCode ?? "IN") === dest.country || profile.scope === "domestic";
 
+  // Everything they told us has to survive the funnel, not just steer the
+  // destination pick: budget, diet, allergies, transport and the free text
+  // are read later by Overview, Explore, Bookings and the itinerary builder.
+  const allergies = profile.allergies
+    .split(",")
+    .map((a) => a.trim().toLowerCase())
+    .filter(Boolean);
+  const groupDiet = profile.diet[0] as Traveller["diet"] | undefined;
+  const party: Traveller[] = profile.party.map((t) => ({
+    ...t,
+    diet: t.diet ?? groupDiet,
+    allergies: t.allergies?.length ? t.allergies : allergies,
+  }));
+
+  if (user) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        homeCity: profile.home?.name ?? user.homeCity,
+        homeLat: profile.home?.lat ?? user.homeLat,
+        homeLng: profile.home?.lng ?? user.homeLng,
+        homeCountry: profile.home?.countryCode ?? user.homeCountry,
+        profile: {
+          interests: profile.interests,
+          freeText: profile.freeText,
+          tripStyle: "balanced",
+          scope: profile.scope,
+          homeCity: profile.home?.name,
+          homeCountry: profile.home?.countryCode ?? "IN",
+          homeLat: profile.home?.lat,
+          homeLng: profile.home?.lng,
+          transport: profile.transport,
+          stayTypes: [],
+          budgetPerDay: profile.budgetPerDay,
+          currency: "INR",
+        },
+      },
+    });
+  }
+
   const trip = await prisma.trip.create({
     data: {
       title: dest.name,
@@ -152,7 +193,7 @@ export async function createTripFromDestination(
       coverImage: COVERS[profile.interests[0]] ?? COVERS.mountains,
       status: "PLANNING",
       origin: "planned",
-      party: { travellers: JSON.parse(JSON.stringify(profile.party)) },
+      party: { travellers: JSON.parse(JSON.stringify(party)) },
       inboundAddress: `trip-${rand(4)}@in.wayfare.app`,
       shareId: rand(17),
       members: user ? { create: { userId: user.id, role: "owner" } } : undefined,

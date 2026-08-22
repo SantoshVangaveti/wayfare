@@ -7,6 +7,7 @@ import { askAI, AiNotConfigured } from "@/lib/ai";
 import { analyseDay, analyseTrip, toHHMM, toMin } from "@/lib/feasibility";
 import { toBlockLike } from "@/lib/blocks";
 import { repackDay } from "@/lib/fix";
+import { tripBudget } from "@/lib/budget";
 import type { BlockLike, Party } from "@/lib/types";
 
 const ItinBlockSchema = z.object({
@@ -65,17 +66,21 @@ export async function generateItinerary(
     dates.push(new Date(t).toISOString().slice(0, 10));
   }
 
+  const budget = await tripBudget(tripId);
+
   let proposed: z.infer<typeof ItinSchema>;
   try {
     proposed = await askAI({
       feature: "buildItinerary",
-      system: ITIN_SYSTEM,
+      system: `${ITIN_SYSTEM}\n- ${budget.brief}`,
       prompt: JSON.stringify({
         destination: trip.destination,
         destLat: trip.destLat,
         destLng: trip.destLng,
         dates,
         party,
+        budgetPerDay: budget.perDay,
+        currency: budget.currency,
         keepExistingBlocks: trip.blocks
           .filter((b) => b.status !== "PLANNED")
           .map((b) => ({

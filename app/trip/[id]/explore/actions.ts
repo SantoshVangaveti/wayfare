@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { askAI, AiNotConfigured } from "@/lib/ai";
 import { getCurrentUser } from "@/lib/session";
+import { tripBudget } from "@/lib/budget";
 import type { OpenHours } from "@/lib/types";
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
@@ -58,15 +59,19 @@ export async function suggestPlacesAction(tripId: string): Promise<PlacesResult>
   if (!trip) return { ok: false, reason: "failed" };
   if (trip.candidates.length > 0) return { ok: true };
 
+  const budget = await tripBudget(tripId);
+
   try {
     const res = await askAI({
       feature: "suggestPlaces",
-      system: PLACES_SYSTEM,
+      system: `${PLACES_SYSTEM}\n- ${budget.brief}`,
       prompt: JSON.stringify({
         destination: trip.destination,
         lat: trip.destLat,
         lng: trip.destLng,
         party: trip.party,
+        budgetPerDay: budget.perDay,
+        currency: budget.currency,
         dates: {
           start: trip.startDate.toISOString().slice(0, 10),
           end: trip.endDate.toISOString().slice(0, 10),

@@ -14,7 +14,7 @@ import {
   extractIngest, rejectIngest,
 } from "./actions";
 
-type CardState = "idle" | "reading" | "failed" | "no-key";
+type CardState = "idle" | "reading" | "failed" | "no-key" | "quota" | "scanned";
 
 export function InboxView({
   tripId,
@@ -59,7 +59,7 @@ export function InboxView({
           );
           setStates((s) => ({ ...s, [g.id]: "idle" }));
         } else {
-          setStates((s) => ({ ...s, [g.id]: res.reason === "no-key" ? "no-key" : "failed" }));
+          setStates((s) => ({ ...s, [g.id]: res.reason as CardState }));
         }
       }
       extractingRef.current = false;
@@ -252,13 +252,21 @@ export function InboxView({
                 );
                 setStates((s) => ({ ...s, [g.id]: "idle" }));
               } else {
-                setStates((s) => ({ ...s, [g.id]: res.reason === "no-key" ? "no-key" : "failed" }));
+                setStates((s) => ({ ...s, [g.id]: res.reason as CardState }));
               }
             });
           }}
           onApply={(blocks) =>
             startTransition(async () => {
-              const res = await applyIngest(g.id, blocks);
+              const res = await applyIngest(g.id, blocks, tripId);
+              if (!res.ok) {
+                setFileNote(
+                  res.reason === "shape"
+                    ? "That card didn't have a usable date — check the date field and try again."
+                    : "Couldn't add that to the trip. Reload and try again.",
+                );
+                return;
+              }
               if (res.ok) {
                 setIngests((list) =>
                   list.map((x) => (x.id === g.id ? { ...x, status: "applied" } : x)),
@@ -341,6 +349,25 @@ function ReviewCard({
         headline="No AI key yet."
         message="Add one in Settings and this card will read itself."
       />
+    );
+  }
+  if (state === "quota") {
+    return (
+      <Companion
+        headline="That key is out of requests for today."
+        message="Swap in another key in Settings — Test & Save takes ten seconds, and this card reads itself straight after."
+      />
+    );
+  }
+  if (state === "scanned") {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4">
+        <Inbox className="size-4 text-ink-3" />
+        <span className="text-sm text-ink-2">
+          That PDF is a scan with no text in it — screenshot the page instead
+          and drop the image.
+        </span>
+      </div>
     );
   }
   if (state === "failed" || !parsed || !blocks) {

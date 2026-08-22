@@ -93,7 +93,13 @@ host name, wifi credentials. Rules:
 
 export type ExtractActionResult =
   | { ok: true; parsed: ExtractResult }
-  | { ok: false; reason: "no-key" | "failed" };
+  | { ok: false; reason: "no-key" | "quota" | "scanned" | "failed" };
+
+/** Providers signal an exhausted allowance differently; all of them say 429. */
+function isQuotaError(e: unknown): boolean {
+  const s = String((e as { message?: string })?.message ?? e);
+  return /429|quota|rate.?limit|RESOURCE_EXHAUSTED|exceeded/i.test(s);
+}
 
 export async function extractIngest(ingestId: string): Promise<ExtractActionResult> {
   const ingest = await prisma.ingest.findUnique({
@@ -130,9 +136,9 @@ export async function extractIngest(ingestId: string): Promise<ExtractActionResu
       console.error("pdf text extraction failed:", e);
     }
   }
-  // A scanned PDF has no text layer — fail honestly instead of guessing.
+  // A scanned PDF has no text layer — say so instead of guessing.
   if (isPdf && (!pdfText || pdfText.length < 20)) {
-    return { ok: false, reason: "failed" };
+    return { ok: false, reason: "scanned" };
   }
 
   const attachment = ingest.rawImage && !isPdf ? { images: [ingest.rawImage] } : {};
@@ -161,6 +167,10 @@ export async function extractIngest(ingestId: string): Promise<ExtractActionResu
     return { ok: true, parsed: stored as unknown as ExtractResult };
   } catch (e) {
     if (e instanceof AiNotConfigured) return { ok: false, reason: "no-key" };
+    if (isQuotaError(e)) {
+      console.error("extractBlocks hit the provider's rate limit");
+      return { ok: false, reason: "quota" };
+    }
     console.error("extractBlocks failed:", e);
     return { ok: false, reason: "failed" };
   }
@@ -170,13 +180,21 @@ export async function extractIngest(ingestId: string): Promise<ExtractActionResu
 export async function applyIngest(
   ingestId: string,
   blocks: unknown,
-): Promise<{ ok: boolean }> {
+  /** The trip the user is looking at — authoritative. An ingest can lose its
+   *  own link (deleting a trip nulls it), and Add must still work. */
+  tripId?: string,
+): Promise<{ ok: boolean; reason?: string }> {
   const parsedBlocks = z.array(BlockSchema).safeParse(blocks);
+  if (!parsedBlocks.success) {
+    console.error("applyIngest rejected blocks:", parsedBlocks.error.issues.slice(0, 3));
+    return { ok: false, reason: "shape" };
+  }
   const ingest = await prisma.ingest.findUnique({ where: { id: ingestId } });
-  if (!parsedBlocks.success || !ingest?.tripId) return { ok: false };
+  const targetTrip = tripId ?? ingest?.tripId;
+  if (!ingest || !targetTrip) return { ok: false, reason: "no-trip" };
 
   const maxSort = await prisma.block.aggregate({
-    where: { tripId: ingest.tripId },
+    where: { tripId: targetTrip },
     _max: { sortOrder: true },
   });
   let sort = (maxSort._max.sortOrder ?? 0) + 1;
@@ -185,7 +203,7 @@ export async function applyIngest(
     ...parsedBlocks.data.map((b) =>
       prisma.block.create({
         data: {
-          tripId: ingest.tripId!,
+          tripId: targetTrip,
           date: new Date(`${b.date}T00:00:00.000Z`),
           startTime: b.startTime ?? null,
           endTime: b.endTime ?? null,
@@ -203,7 +221,7 @@ export async function applyIngest(
     prisma.ingest.update({ where: { id: ingestId }, data: { status: "applied" } }),
   ]);
 
-  revalidatePath(`/trip/${ingest.tripId}`, "layout");
+  revalidatePath(`/trip/${targetTrip}`, "layout");
   return { ok: true };
 }
 
