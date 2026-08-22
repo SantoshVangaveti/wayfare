@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Settings } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
+import { themeForDay } from "@/lib/imagery";
+import { AmbientBackdrop } from "./AmbientBackdrop";
 import { TabBar } from "./TabBar";
 import { UserSwitcher } from "./UserSwitcher";
 
@@ -16,13 +18,24 @@ export async function TripShell({
   status: string;
   children: React.ReactNode;
 }) {
-  const [users, current] = await Promise.all([
+  const [users, current, blocks] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "asc" },
       select: { id: true, name: true, avatar: true },
     }),
     getCurrentUser(),
+    prisma.block.findMany({
+      where: { tripId },
+      select: { title: true, subtitle: true, tags: true },
+      take: 40,
+    }),
   ]);
+
+  // The backdrop is drawn from what this trip is actually made of.
+  const backdrop = themeForDay(
+    blocks.map((b) => `${b.title} ${b.subtitle ?? ""}`),
+    blocks.flatMap((b) => b.tags),
+  ).photo;
 
   const base = `/trip/${tripId}`;
   const tabs = [
@@ -39,7 +52,8 @@ export async function TripShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur print:hidden">
+      <AmbientBackdrop photo={backdrop} />
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/80 backdrop-blur print:hidden">
         <div className="mx-auto w-full max-w-5xl px-4">
           <div className="flex items-center justify-between gap-3 py-3">
             <Link
@@ -64,7 +78,7 @@ export async function TripShell({
           <TabBar tabs={tabs} />
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
+      <main className="relative z-10 mx-auto w-full max-w-5xl flex-1 px-4 py-6">
         {children}
       </main>
     </div>

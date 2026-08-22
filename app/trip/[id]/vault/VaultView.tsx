@@ -107,12 +107,14 @@ export function VaultView({
         >
           <Plus className="size-4" /> Add anything
         </Link>
-        <button
-          onClick={() => window.print()}
+        <a
+          href={`/trip/${tripId}/print`}
+          target="_blank"
+          rel="noreferrer"
           className="flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2.5 font-poppins text-xs font-semibold text-ink-2 hover:bg-paper-2"
         >
-          <Printer className="size-4" /> Download PDF
-        </button>
+          <Printer className="size-4" /> Whole trip as PDF
+        </a>
       </div>
 
       {byDate.length === 0 && (
@@ -176,7 +178,7 @@ export function VaultView({
                         )}
                         {isAddress && e.lat != null && e.lng != null && (
                           <a
-                            href={mapsUrl(e.lat, e.lng, e.placeName ?? e.title)}
+                            href={mapsUrl(e.lat, e.lng, v)}
                             target="_blank"
                             rel="noreferrer"
                             aria-label="Open in maps"

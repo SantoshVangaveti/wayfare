@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { effectiveStatus } from "@/lib/status";
 import { haversineKm } from "@/lib/feasibility";
 import { weatherFor } from "@/lib/weather";
+import { themeForDay } from "@/lib/imagery";
 import type { StoryDay, StoryStats } from "@/components/TripStory";
 import { StoryView } from "./StoryView";
 
@@ -46,16 +47,28 @@ export default async function StoryPage({
       (b) => b.date.toISOString().slice(0, 10) === date,
     );
     const w = weather[i];
+    // What the day is REMEMBERED for leads: activities first, then the
+    // journey, and meals only if nothing else happened.
+    const rank = (t: string) =>
+      t === "ACTIVITY" ? 0 : ["FLIGHT", "TRAIN", "BUS", "FERRY", "TRANSIT"].includes(t) ? 1 : t === "LODGING" ? 2 : 3;
+    const highlights = [...blocks]
+      .sort((a, b) => rank(a.type) - rank(b.type))
+      .slice(0, 3)
+      .map((b) => b.title);
+    // The day's picture comes from what happens on it, not from a stock list.
+    const theme = themeForDay(
+      blocks.map((b) => `${b.title} ${b.subtitle ?? ""}`),
+      blocks.flatMap((b) => b.tags),
+    );
     return {
       date,
       dayLabel: format(parseISO(date), "EEE d"),
-      highlights: blocks
-        .filter((b) => ["ACTIVITY", "MEAL", "FLIGHT"].includes(b.type))
-        .slice(0, 3)
-        .map((b) => b.title),
+      highlights,
       weather:
         w.status === "fulfilled" ? `${w.value.avgTempC}°C ${w.value.verdict}` : null,
       photos: blocks.flatMap((b) => photosByBlock.get(b.id) ?? []),
+      photo: theme.photo,
+      tint: theme.tint,
     };
   });
 

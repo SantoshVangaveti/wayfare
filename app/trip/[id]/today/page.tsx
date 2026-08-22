@@ -179,7 +179,7 @@ export default async function TodayPage({
                     )}
                     {b.lat != null && b.lng != null && (
                       <a
-                        href={mapsUrl(b.lat, b.lng, b.placeName ?? b.title)}
+                        href={mapsUrl(b.lat, b.lng, `${b.placeName ?? b.title}, ${trip.destination}`)}
                         target="_blank"
                         rel="noreferrer"
                         aria-label={`Map for ${b.title}`}

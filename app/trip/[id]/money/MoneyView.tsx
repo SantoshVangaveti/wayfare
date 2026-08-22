@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Plus, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Plus, X } from "lucide-react";
 import type { Transfer } from "@/lib/types";
 import { Chip } from "@/components/Chip";
 import { cn } from "@/lib/utils";
@@ -33,10 +33,12 @@ export function MoneyView({
     amount: number;
     payerId: string;
     payerName: string;
+    shares: Record<string, number>;
   }[];
 }) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const money = useMemo(
     () =>
       new Intl.NumberFormat("en-IN", {
@@ -142,20 +144,56 @@ export function MoneyView({
           </button>
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-surface">
-          {expenses.map((e, i) => (
-            <div
-              key={e.id}
-              className={cn(
-                "flex items-center gap-3 px-4 py-2.5",
-                i > 0 && "border-t border-line",
-              )}
-            >
-              <Avatar id={e.payerId} className="size-6 text-[10px]" />
-              <span className="min-w-0 flex-1 truncate text-sm">{e.description}</span>
-              <Chip className="hidden sm:inline-flex">{e.payerName} paid</Chip>
-              <span className="font-mono text-sm">{money.format(e.amount)}</span>
-            </div>
-          ))}
+          {expenses.map((e, i) => {
+            const open = expanded === e.id;
+            const split = Object.entries(e.shares).filter(([, v]) => v > 0);
+            return (
+              <div key={e.id} className={cn(i > 0 && "border-t border-line")}>
+                <button
+                  onClick={() => setExpanded(open ? null : e.id)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-paper-2/50"
+                >
+                  <Avatar id={e.payerId} className="size-6 text-[10px]" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{e.description}</span>
+                  <Chip className="hidden sm:inline-flex">{e.payerName} paid</Chip>
+                  <span className="font-mono text-sm">{money.format(e.amount)}</span>
+                  <ChevronDown
+                    className={cn(
+                      "size-4 shrink-0 text-ink-3 transition-transform",
+                      open && "rotate-180",
+                    )}
+                  />
+                </button>
+                {open && (
+                  <div className="border-t border-line bg-paper px-4 py-3">
+                    <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-ink-3">
+                      split {split.length} ways · {name(e.payerId)} paid, so everyone
+                      else owes them their share
+                    </div>
+                    <div className="space-y-1">
+                      {split.map(([uid, owed]) => (
+                        <div key={uid} className="flex items-center gap-2 text-sm">
+                          <Avatar id={uid} className="size-5 text-[9px]" />
+                          <span className="flex-1">{name(uid)}</span>
+                          <span
+                            className={cn(
+                              "font-mono",
+                              uid === e.payerId ? "text-ink-3" : "text-ink",
+                            )}
+                          >
+                            {money.format(owed)}
+                            {uid === e.payerId && (
+                              <span className="ml-1 text-[11px]">(own share)</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {expenses.length === 0 && (
             <p className="p-4 text-sm text-ink-3">No expenses yet.</p>
           )}

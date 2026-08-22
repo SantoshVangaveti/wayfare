@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Check, Download, Link2, Play, RotateCcw, X } from "lucide-react";
+import { Check, Download, FileText, Link2, Play, RotateCcw, X } from "lucide-react";
 import { toPng } from "html-to-image";
 import { TripStory, type StoryDay, type StoryStats } from "@/components/TripStory";
 import { cn } from "@/lib/utils";
@@ -79,13 +79,21 @@ export function StoryView({
         >
           <RotateCcw className="size-4" /> Replay
         </button>
+        <a
+          href={`/trip/${tripId}/print`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2.5 font-poppins text-xs font-semibold text-ink-2 hover:bg-paper-2"
+        >
+          <FileText className="size-4" /> Full itinerary PDF
+        </a>
         <button
           onClick={downloadPoster}
           disabled={savingPoster}
           className="flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2.5 font-poppins text-xs font-semibold text-ink-2 hover:bg-paper-2 disabled:opacity-50"
         >
           <Download className="size-4" />
-          {savingPoster ? "Rendering…" : "Download poster"}
+          {savingPoster ? "Rendering…" : "Poster"}
         </button>
         {shareId && (
           <div className="ml-auto flex items-center gap-2">

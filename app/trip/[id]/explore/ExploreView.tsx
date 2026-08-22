@@ -244,7 +244,7 @@ export function ExploreView({
                   <ExternalLink className="size-4" />
                 </a>
                 <a
-                  href={mapsUrl(c.lat, c.lng, c.name)}
+                  href={mapsUrl(c.lat, c.lng, `${c.name}, ${destination}`)}
                   target="_blank"
                   rel="noreferrer"
                   className="rounded-lg border border-line p-1.5 text-ink-3 hover:text-sea"

@@ -1,8 +1,9 @@
 "use client";
 
 // One component, two modes. mode="plan" animates the route before the trip;
-// mode="memories" replays it with real photos after. CSS + SVG only — nothing
-// that can fail on stage.
+// mode="memories" replays it with real photos after. Each day card is themed
+// from what that day actually contains (lib/imagery.ts). CSS + SVG only —
+// nothing that can fail on stage.
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
@@ -16,6 +17,8 @@ export interface StoryDay {
   highlights: string[];
   weather?: string | null;
   photos: string[];
+  photo: string;             // curated from the day's own activities
+  tint: string;
 }
 
 export interface StoryStats {
@@ -25,8 +28,7 @@ export interface StoryStats {
   photos: number;
 }
 
-const NODE_H = 132;
-const X = 28;
+const STEP = 0.7;
 
 export function TripStory({
   mode,
@@ -43,129 +45,125 @@ export function TripStory({
   stats: StoryStats;
   dark?: boolean;
 }) {
-  const totalDur = days.length * 0.55;
-  const height = days.length * NODE_H + 40;
-
-  const x = (i: number) => X + (i % 2 ? 18 : 0);
-  const y = (i: number) => 30 + i * NODE_H;
-  let d = `M ${x(0)} ${y(0)}`;
-  for (let i = 1; i < days.length; i++) {
-    d += ` C ${x(i - 1) + 34} ${y(i - 1) + NODE_H / 2}, ${x(i) - 34} ${y(i) - NODE_H / 2}, ${x(i)} ${y(i)}`;
-  }
+  const totalDur = days.length * STEP;
 
   return (
     <div className={cn(dark ? "text-white" : "text-ink")}>
-      <div className="mb-6">
-        <motion.h2
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="font-poppins text-xl font-bold tracking-tight"
-        >
-          {title}
-        </motion.h2>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className={cn("font-mono text-xs", dark ? "text-white/60" : "text-ink-3")}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="mb-6 text-center"
+      >
+        <h2 className="font-poppins text-2xl font-bold tracking-tight">{title}</h2>
+        <div
+          className={cn(
+            "font-mono text-xs uppercase tracking-widest",
+            dark ? "text-white/60" : "text-ink-3",
+          )}
         >
           {destination} · {mode === "plan" ? "the plan" : "the memories"}
-        </motion.div>
-      </div>
+        </div>
+      </motion.div>
 
-      <div className="relative" style={{ height }}>
-        {/* the route draws itself */}
-        <svg
-          className="absolute left-0 top-0 h-full"
-          width="90"
-          viewBox={`0 0 90 ${height}`}
-          fill="none"
+      <div className="relative">
+        {/* the thread that ties the days together, drawing itself downward */}
+        <motion.div
           aria-hidden
-        >
-          <motion.path
-            d={d}
-            stroke="var(--color-sea)"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: totalDur, ease: "linear" }}
-          />
-        </svg>
+          initial={{ scaleY: 0 }}
+          animate={{ scaleY: 1 }}
+          transition={{ duration: totalDur, ease: "linear" }}
+          style={{ transformOrigin: "top" }}
+          className="absolute left-[1.4rem] top-6 h-[calc(100%-3rem)] w-0.5 rounded-full bg-sea/60"
+        />
 
-        {days.map((day, i) => (
-          <div key={day.date}>
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: i * 0.55, duration: 0.25 }}
-              className="absolute z-10 flex size-5 items-center justify-center rounded-full bg-sea font-poppins text-[9px] font-bold text-white"
-              style={{ left: x(i) - 10, top: y(i) - 10 }}
-            >
-              {i + 1}
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, x: 18 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.55 + 0.12, duration: 0.4 }}
-              className={cn(
-                "absolute left-[86px] right-0 rounded-xl border p-3",
-                dark
-                  ? "border-white/15 bg-white/5"
-                  : "border-line bg-surface shadow-sm",
-              )}
-              style={{ top: y(i) - 18 }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-poppins text-sm font-semibold">
-                  Day {i + 1}
-                </span>
-                <span
-                  className={cn(
-                    "font-mono text-[11px]",
-                    dark ? "text-white/60" : "text-ink-3",
-                  )}
-                >
-                  {day.dayLabel}
-                </span>
-                {day.weather && (
-                  <Chip variant="sea" className="ml-auto">
-                    {day.weather}
-                  </Chip>
-                )}
-              </div>
-              <div
-                className={cn(
-                  "mt-1 line-clamp-2 text-sm",
-                  dark ? "text-white/80" : "text-ink-2",
-                )}
+        <div className="space-y-4">
+          {days.map((day, i) => (
+            <div key={day.date} className="relative flex gap-4">
+              {/* day node on the thread */}
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: i * STEP, type: "spring", stiffness: 320, damping: 18 }}
+                className="relative z-10 mt-6 flex size-12 shrink-0 flex-col items-center justify-center rounded-full bg-sea font-poppins text-white shadow-lg ring-4 ring-surface"
               >
-                {day.highlights.length ? day.highlights.join(" · ") : "a free day"}
-              </div>
-              {mode === "memories" && day.photos.length > 0 && (
-                <div className="mt-2 flex gap-1.5">
-                  {day.photos.slice(0, 4).map((p) => (
-                    <span
-                      key={p}
-                      className="relative size-12 overflow-hidden rounded-lg"
-                    >
-                      <Image src={p} alt="" fill sizes="48px" className="object-cover" />
+                <span className="text-[9px] font-medium uppercase leading-none opacity-80">
+                  day
+                </span>
+                <span className="text-base font-bold leading-tight">{i + 1}</span>
+              </motion.div>
+
+              {/* the day itself — a photographic card themed by its activities */}
+              <motion.div
+                initial={{ opacity: 0, x: 28, scale: 0.97 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                transition={{ delay: i * STEP + 0.1, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                className="relative min-h-[8.5rem] flex-1 overflow-hidden rounded-2xl shadow-md"
+              >
+                <motion.div
+                  initial={{ scale: 1.18 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: i * STEP + 0.1, duration: 2.4, ease: "easeOut" }}
+                  className="absolute inset-0"
+                >
+                  <Image
+                    src={day.photo}
+                    alt=""
+                    fill
+                    sizes="(max-width: 640px) 100vw, 640px"
+                    className="object-cover"
+                  />
+                </motion.div>
+                {/* colour wash keyed to the day, plus a floor for the text */}
+                <div className={cn("absolute inset-0 bg-gradient-to-br opacity-55", day.tint)} />
+                <div className="absolute inset-0 bg-gradient-to-t from-ink/85 via-ink/25 to-transparent" />
+
+                <div className="relative flex h-full flex-col justify-end p-4">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] uppercase tracking-widest text-white/70">
+                      {day.dayLabel}
                     </span>
-                  ))}
+                    {day.weather && (
+                      <Chip className="bg-white/20 text-white">{day.weather}</Chip>
+                    )}
+                  </div>
+                  <div className="mt-1 font-poppins text-lg font-bold leading-tight tracking-tight text-white">
+                    {day.highlights[0] ?? "A free day"}
+                  </div>
+                  {day.highlights.length > 1 && (
+                    <div className="mt-0.5 text-sm text-white/85">
+                      then {day.highlights.slice(1).join(" · ")}
+                    </div>
+                  )}
+                  {mode === "memories" && day.photos.length > 0 && (
+                    <div className="mt-2.5 flex gap-1.5">
+                      {day.photos.slice(0, 5).map((p) => (
+                        <motion.span
+                          key={p}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * STEP + 0.5 }}
+                          className="relative size-11 overflow-hidden rounded-lg ring-2 ring-white/30"
+                        >
+                          <Image src={p} alt="" fill sizes="44px" className="object-cover" />
+                        </motion.span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </motion.div>
-          </div>
-        ))}
+              </motion.div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* the stats count up at the end */}
       <motion.div
-        initial={{ opacity: 0, y: 14 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: totalDur + 0.2, duration: 0.4 }}
+        transition={{ delay: totalDur + 0.2, duration: 0.5 }}
         className={cn(
-          "mt-6 grid grid-cols-4 gap-2 rounded-2xl border p-4 text-center",
+          "mt-5 grid grid-cols-4 gap-2 rounded-2xl border p-4 text-center",
           dark ? "border-white/15 bg-white/5" : "border-line bg-surface",
         )}
       >

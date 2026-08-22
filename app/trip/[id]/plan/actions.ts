@@ -105,12 +105,14 @@ export async function generateItinerary(
   }
 
   const candByName = new Map(candidates.map((c) => [c.name.toLowerCase(), c]));
+  const subtitleById = new Map<string, string | null>();
   let working: BlockLike[] = proposed.blocks
     .filter((b) => dates.includes(b.date))
     .map((b, i) => {
       const cand = b.candidateName
         ? candByName.get(b.candidateName.toLowerCase())
         : undefined;
+      subtitleById.set(`gen-${i}`, b.subtitle ?? cand?.description ?? null);
       return {
         id: `gen-${i}`,
         type: b.type,
@@ -181,6 +183,7 @@ export async function generateItinerary(
             endTime: b.endTime,
             type: b.type,
             title: b.title,
+            subtitle: subtitleById.get(b.id) ?? null,
             durationMin: b.durationMin,
             lat: b.lat,
             lng: b.lng,

@@ -49,6 +49,7 @@ export default async function MoneyPage({
         amount: e.amount,
         payerId: e.payerId,
         payerName: e.payer.name,
+        shares: e.shares as Record<string, number>,
       }))}
     />
   );

@@ -44,6 +44,7 @@ export default async function PlanPage({
     <PlanView
       tripId={trip.id}
       currency={trip.currency}
+      destination={trip.destination}
       party={party}
       days={dates.map((date) => ({ date, blocks: byDate.get(date)! }))}
     />

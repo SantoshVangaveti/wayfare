@@ -1,10 +1,14 @@
-/** Deep links only — no Maps API key anywhere in this project. */
+/** Deep links only — no Maps API key anywhere in this project.
+ *  A NAME search lands on the actual place listing (photos, reviews,
+ *  directions); bare coordinates only as a fallback — they just drop a pin. */
 export function mapsUrl(lat?: number | null, lng?: number | null, name?: string): string {
-  if (lat == null || lng == null) {
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name ?? "")}`;
+  if (name) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
   }
-  const q = `${lat},${lng}`;
-  return `https://www.google.com/maps/search/?api=1&query=${q}${name ? `&query_place_id=` : ""}`;
+  if (lat == null || lng == null) {
+    return `https://www.google.com/maps`;
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 export function directionsUrl(
   from: { lat: number; lng: number }, to: { lat: number; lng: number },

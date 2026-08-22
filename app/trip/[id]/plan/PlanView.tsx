@@ -8,10 +8,13 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
-import { ArrowDown, ArrowUp, Sparkles, Wand2 } from "lucide-react";
 import {
-  analyseTrip, fmtDur, toHHMM, toMin,
+  ArrowDown, ArrowUp, CarFront, ExternalLink, Footprints, MapPin, Sparkles, Wand2,
+} from "lucide-react";
+import {
+  analyseTrip, fmtDur, toHHMM, toMin, travelTime,
 } from "@/lib/feasibility";
+import { mapsUrl } from "@/lib/maps";
 import type { BlockLike, Party, Warning } from "@/lib/types";
 import { BlockCard } from "@/components/BlockCard";
 import { LoadBar } from "@/components/LoadBar";
@@ -29,14 +32,20 @@ export type PlanBlock = BlockLike & {
 
 const GHOST_GAP_MIN = 150;
 
+// Same rule as the engine: these blocks ARE a journey, so there is no
+// "getting there" leg to draw into them.
+const TRANSIT_TYPES = new Set(["FLIGHT", "TRAIN", "BUS", "FERRY", "TRANSIT"]);
+
 export function PlanView({
   tripId,
   currency,
+  destination,
   party,
   days: initialDays,
 }: {
   tripId: string;
   currency: string;
+  destination: string;
   party: Party;
   days: { date: string; blocks: PlanBlock[] }[];
 }) {
@@ -237,6 +246,19 @@ export function PlanView({
               b.endTime && next?.startTime
                 ? toMin(next.startTime) - toMin(b.endTime)
                 : 0;
+            const dur =
+              b.durationMin ??
+              (b.startTime && b.endTime ? toMin(b.endTime) - toMin(b.startTime) : null);
+            const leg =
+              next &&
+              !TRANSIT_TYPES.has(next.type) &&
+              typeof b.lat === "number" && typeof b.lng === "number" &&
+              typeof next.lat === "number" && typeof next.lng === "number"
+                ? travelTime(
+                    { lat: b.lat, lng: b.lng },
+                    { lat: next.lat, lng: next.lng },
+                  )
+                : null;
             return (
               <div key={b.id} className="space-y-2">
                 <div className="group relative">
@@ -248,6 +270,29 @@ export function PlanView({
                     subtitle={b.subtitle}
                     chip={statusChip(b)}
                   >
+                    {dur != null && dur > 0 && <Chip variant="sea">{fmtDur(dur)} here</Chip>}
+                    {b.lat != null && b.lng != null && (
+                      <a
+                        href={mapsUrl(b.lat, b.lng, `${b.title}, ${destination}`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Map for ${b.title}`}
+                        className="rounded-md border border-line p-1 text-ink-3 hover:border-sea hover:text-sea"
+                      >
+                        <MapPin className="size-3.5" />
+                      </a>
+                    )}
+                    {["ACTIVITY", "MEAL", "LODGING"].includes(b.type) && (
+                      <a
+                        href={`https://www.google.com/search?q=${encodeURIComponent(`${b.title} ${destination}`)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Search ${b.title}`}
+                        className="rounded-md border border-line p-1 text-ink-3 hover:border-sea hover:text-sea"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </a>
+                    )}
                     {blockWarnings.map((w) => (
                       <Chip key={w.code + w.blockId} variant="mango">
                         {w.message}
@@ -274,6 +319,21 @@ export function PlanView({
                     </button>
                   </div>
                 </div>
+                {/* the connective tissue: how you get to the next thing */}
+                {leg && next && gap > 0 && leg.km >= 0.3 && (
+                  <div className="flex items-center gap-2 py-0.5 pl-[4.6rem] font-mono text-[11px] text-ink-3">
+                    {leg.mode === "drive" ? (
+                      <CarFront className="size-3.5 text-mango" />
+                    ) : (
+                      <Footprints className="size-3.5 text-mango" />
+                    )}
+                    <span>
+                      {fmtDur(leg.min)} {leg.mode} · {leg.km.toFixed(leg.km < 10 ? 1 : 0)} km
+                      {gap - leg.min >= 15 && ` · ${fmtDur(gap - leg.min)} to spare`}
+                      {gap < leg.min && " · doesn't fit"}
+                    </span>
+                  </div>
+                )}
                 {gap >= GHOST_GAP_MIN && (
                   <BlockCard
                     variant="ghost"

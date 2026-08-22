@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { PhotoChoiceCard } from "@/components/PhotoChoiceCard";
+import { themeForInterests } from "@/lib/imagery";
 import { defaultFunnel, loadFunnel, saveFunnel, type FunnelState } from "@/lib/funnel";
 
 const INTERESTS = [
@@ -43,7 +45,9 @@ export default function InterestsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="relative z-10 space-y-6">
+      {/* the page dresses itself in whatever they've picked so far */}
+      <AmbientBackdrop photo={themeForInterests(state.interests)} />
       <h1 className="font-poppins text-2xl font-bold tracking-tight">
         What sounds good?
       </h1>
