@@ -42,7 +42,7 @@ async function main() {
     destination: "Wayanad, Kerala", destLat: 11.6854, destLng: 76.1320, destCountry: "IN",
     scope: "domestic", homeCountry: "IN", currency: "INR", homeCurrency: "INR",
     startDate: D("2026-09-07"), endDate: D("2026-09-12"),
-    coverImage: IMG("1602216056096-3190a27a0d3d"),
+    coverImage: IMG("1506905925346-21bda4d32df4"),
     status: "PLANNING", origin: "planned",
     inboundAddress: "trip-a7x2@in.wayfare.app",
     shareId: "x7fk2p9qm4vb3ncd8", shareLevel: "itinerary",
