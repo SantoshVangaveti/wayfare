@@ -16,10 +16,16 @@ export default async function SettingsPage() {
   const dayStart = new Date();
   dayStart.setUTCHours(0, 0, 0, 0);
 
-  const [settings, usage] = await Promise.all([
-    prisma.appSettings.findUnique({ where: { id: "singleton" } }),
-    prisma.aiUsage.findMany({ where: { createdAt: { gte: dayStart } } }),
-  ]);
+  const settings = await prisma.appSettings.findUnique({ where: { id: "singleton" } });
+
+  // The provider's quota belongs to the KEY. When a new key is saved
+  // (settings.updatedAt), older calls no longer count against it — so the
+  // meter counts from whichever is later: start of day or the key save.
+  const since =
+    settings && settings.updatedAt > dayStart ? settings.updatedAt : dayStart;
+  const usage = await prisma.aiUsage.findMany({
+    where: { createdAt: { gte: since } },
+  });
 
   const byFeature = new Map<string, { calls: number; cached: number }>();
   let inTokens = 0;
