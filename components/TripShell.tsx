@@ -46,7 +46,7 @@ export async function TripShell({
     { label: "Explore", href: `${base}/explore` },
     { label: "Inbox", href: `${base}/inbox` },
     { label: "Vault", href: `${base}/vault` },
-    { label: "Money", href: `${base}/money` },
+    { label: "Expenses", href: `${base}/money` },
     { label: "Story", href: `${base}/story` },
   ];
 

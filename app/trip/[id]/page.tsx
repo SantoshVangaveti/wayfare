@@ -159,7 +159,7 @@ export default async function OverviewPage({
       <div className="grid gap-4 lg:grid-cols-2">
         {/* budget vs actual */}
         <section className="rounded-2xl border border-line bg-surface p-4">
-          <h2 className="font-poppins text-base font-bold tracking-tight">Money</h2>
+          <h2 className="font-poppins text-base font-bold tracking-tight">Expenses</h2>
           <div className="mt-3 flex items-baseline justify-between font-mono text-sm">
             <span className="text-ink">{money.format(spent)} spent</span>
             {budget && <span className="text-ink-3">{money.format(budget)} planned</span>}
