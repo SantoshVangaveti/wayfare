@@ -14,12 +14,13 @@ export function AmbientBackdrop({ photo }: { photo: string }) {
           fill
           priority
           sizes="100vw"
-          className="object-cover opacity-[0.22] blur-[3px]"
+          className="object-cover opacity-[0.45] blur-[2px]"
         />
       </div>
-      {/* paper wash — readable, but the scene is genuinely visible behind it.
-          Content sits on opaque cards, so only the gutters show the wallpaper. */}
-      <div className="absolute inset-0 bg-gradient-to-b from-paper/35 via-paper/75 to-paper/90" />
+      {/* Paper wash. Content sits on opaque cards, so the gutters can carry a
+          real scene; the middle band stays milky enough for headings that sit
+          directly on the background. */}
+      <div className="absolute inset-0 bg-gradient-to-b from-paper/25 via-paper/70 to-paper/85" />
       {/* two slow light sources, out of phase so they never pulse together */}
       <div className="wf-glow-a absolute inset-x-0 top-0 h-[55vh] bg-[radial-gradient(120%_100%_at_50%_0%,var(--color-sun-soft)_0%,transparent_70%)]" />
       <div className="wf-glow-b absolute inset-x-0 bottom-0 h-[45vh] bg-[radial-gradient(100%_100%_at_50%_100%,var(--color-sea-soft)_0%,transparent_70%)]" />
